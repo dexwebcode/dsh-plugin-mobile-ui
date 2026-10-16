@@ -1,4 +1,4 @@
-# dsh-plugin-mobile-ui
+# dsh-plugin-mobile-ui-ru
 
 > **Official documentation language: Russian.**
 > English version is provided as a secondary translation.
