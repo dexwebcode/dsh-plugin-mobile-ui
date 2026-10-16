@@ -6,9 +6,9 @@ Mobile UI plugin for DeepSeek Harness. Embeds into your local DSH, auto-starts a
 
 Плагин мобильного UI для DeepSeek Harness. Встраивается в локальный DSH, сам поднимает веб-сервер и ngrok-туннель, отдаёт React-PWA — управляй DSH с телефона из любой сети. Без домена и VPS. Авторизация, WebSocket-стриминг, установка на главный экран.
 
-# dsh-plugin-mobile-ui-ru
-
 ---
+
+# dsh-plugin-mobile-ui-ru
 
 # dsh-plugin-mobile-ui-en
 
