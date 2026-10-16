@@ -2,7 +2,7 @@
 
 > **Official documentation language: Russian.**
 > English version is provided as a secondary translation.
-> See [En-Readme](#dsh-plugin-mobile-ui-en) below.
+> See [dsh-plugin-mobile-ui-en](#dsh-plugin-mobile-ui-en) below.
 
 Mobile UI plugin for DeepSeek Harness. Embeds into your local DSH, auto-starts a web server and ngrok tunnel, and serves a React PWA so you can control DSH from your phone on any network — no domain, no VPS, installable to home screen, with auth and WebSocket streaming.
 
