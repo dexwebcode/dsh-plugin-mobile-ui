@@ -10,7 +10,7 @@ Mobile UI plugin for DeepSeek Harness. Embeds into your local DSH, auto-starts a
 
 ---
 
-#En-Readme
+# En-Readme
 
 **🇬🇧 English version is a translation.**
 The English version is provided for international users as a secondary translation. It may lag behind the Russian original by a few days or versions. When in doubt, refer to the Russian version.
