@@ -10,17 +10,8 @@
 The English version is provided for international users as a secondary translation. It may lag behind the Russian original by a few days or versions. When in doubt, refer to the Russian version.
 
 **Why this choice / Почему так:**
-The project author is Russian-speaking, and the primary audience of DeepSeek Harness plugins includes a large Russian-speaking community. Russian is the source of truth. English exists to make the plugin accessible to everyone else.
-
-Автор проекта — русскоязычный, и значительная часть сообщества плагинов DeepSeek Harness говорит по-русски. Русский — источник истины. Английский — для остального мира.
-
-| Version | Status | Location |
-|---|---|---|
-| 🇷🇺 Русский (official) | **Primary / Актуальная** | `README.md` (this file, Russian sections) |
-| 🇬🇧 English (translation) | Secondary | `README.md` (this file, English sections) |
-
-> If you spot a mistake in the English translation, PRs to `README.en.md` are welcome.
-> Если нашли ошибку в русском тексте — открывайте Issue, это приоритет.
+Автор проекта — русскоязычный, и значительная часть сообщества плагинов DeepSeek Harness говорит по-русски.
+> The project author is Russian-speaking, and the primary audience of DeepSeek Harness plugins includes a large Russian-speaking community.
 
 # dsh-plugin-mobile-ui-ru
 
