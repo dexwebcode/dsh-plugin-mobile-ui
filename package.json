@@ -1,0 +1,45 @@
+{
+  "name": "dsh-mobile-ui",
+  "version": "3.5.3",
+  "private": false,
+  "description": "Self-contained mobile access for DeepSeek Harness: one install brings a password-protected public URL over ngrok (cloudflared fallback) serving the official web UI with the mobile layer. The tunnel and the password gate are vendored inside this package, so no other plugin is required.",
+  "license": "MIT",
+  "type": "module",
+  "main": "lib/host/index.js",
+  "exports": {
+    ".": "./lib/host/index.js",
+    "./client": "./lib/client.js",
+    "./relay": "./vendor/relay.js",
+    "./tunnel": "./vendor/tunnel/index.js",
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "lib",
+    "vendor/relay.js",
+    "vendor/tunnel",
+    "cordis.patch.yml",
+    "README.md"
+  ],
+  "engines": {
+    "node": "^22.19.0 || >=24"
+  },
+  "scripts": {
+    "build": "node scripts/build.mjs",
+    "prepack": "npm run build"
+  },
+  "dependencies": {
+    "@deepseek-ai/schemastery": "^3.18.4",
+    "qrcode": "^1.5.4"
+  },
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    },
+    "client": {
+      "platform": "web",
+      "inject": [
+        "@deepseek-ai/dsh-client-ui-settings"
+      ]
+    }
+  }
+}
