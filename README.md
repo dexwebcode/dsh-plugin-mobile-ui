@@ -10,6 +10,7 @@ Mobile UI plugin for DeepSeek Harness. Embeds into your local DSH, auto-starts a
 Спонсором и идейным вдохновителем данного проекта является мой дорогой друг и товарищь - [RekXvill](https://github.com/RekXvill)
 
 # dsh-plugin-mobile-ui-ru
+Документация в стадии разработки
 
 # dsh-plugin-mobile-ui-en
-
+Documentation in development
