@@ -23,6 +23,7 @@ function trackLayout() {
       installNewChatButton(),
       installSettingsScroll(),
       installSessionLoading(),
+      installScrollButton(),
     ]
   }
 

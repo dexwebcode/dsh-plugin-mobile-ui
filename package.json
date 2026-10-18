@@ -1,6 +1,6 @@
 {
   "name": "dsh-mobile-ui",
-  "version": "3.5.6",
+  "version": "3.5.7",
   "private": false,
   "description": "Self-contained mobile access for DeepSeek Harness: one install brings a password-protected public URL over ngrok (cloudflared fallback) serving the official web UI with the mobile layer. The tunnel and the password gate are vendored inside this package, so no other plugin is required.",
   "license": "MIT",
