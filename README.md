@@ -2,6 +2,12 @@
 
 > **Язык / Language:** [Русский](#dsh-plugin-mobile-ui-ru) · [English](#dsh-plugin-mobile-ui-en)
 
+
+Плагин мобильного интерфейса для DeepSeek Harness. Встраивается в ваш локальный DSH, автоматически запускает веб-сервер и туннель ngrok и поддерживает React PWA, так что вы можете управлять DSH со своего телефона в любой сети — без домена, без VPS, с возможностью установки на домашний экран, с авторизацией и потоковой передачей через WebSocket.
+
+
+Mobile UI plugin for DeepSeek Harness. Embeds into your local DSH, auto-starts a web server and ngrok tunnel, and serves a React PWA so you can control DSH from your phone on any network — no domain, no VPS, installable to home screen, with auth and WebSocket streaming
+
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
 ---
