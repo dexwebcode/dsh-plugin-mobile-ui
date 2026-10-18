@@ -1,53 +1,17 @@
 // 21-session-loading.js — индикатор загрузки при переключении чата.
 
 /**
- * Идёт переключение чата: полоса показана, переписка ещё не сменилась.
- *
- * Этим вопросом пользуется слой панели ({@link installDrawer}): повторный тап по
- * списку сессий, пока предыдущая ещё грузится, harness не переживает — открытие
- * теряет ссылку (`Session reference "…" is released`), и экран навсегда остаётся
- * на «Loading history…». На телефоне, где история едет десятки секунд, это и
- * выглядит как «сессии не грузятся».
- *
- * Признак ставится тапом и снимается, когда переписка сменилась: подсказку
- * самого harness («Loading history…») брать нельзя — у работающей сессии она
- * висит постоянно, и защита перекрыла бы переключение совсем.
- */
-let sessionSwitchInFlight = false
-
-/** Идёт переключение чата? */
-function isSessionSwitchInFlight() {
-  return sessionSwitchInFlight
-}
-
-/**
- * Идёт восстановление истории: harness показывает «Loading history…», а
- * переписки ещё нет.
- *
- * Именно в этом состоянии тап по другой сессии обрывает открытие. У работающей
- * сессии та же подсказка висит рядом с сообщениями — по одному тексту подсказки
- * их не различить, поэтому вторая половина условия: переписка пуста (в ней
- * только сама подсказка).
- */
-function isRestoringHistory() {
-  const body = document.querySelector("[class$='_scrollBody']")
-  if (body === null) return false
-  if (document.querySelector("[data-chat-flow] > [class$='_hint']") === null) return false
-  return (body.textContent ?? '').length < RESTORE_ONLY_TEXT_MAX
-}
-
-/** Сессия занята: переключение по тапу или восстановление истории. */
-function isSessionBusy() {
-  return sessionSwitchInFlight || isRestoringHistory()
-}
-
-/**
  * Тонкая полоса вверху экрана, пока грузится выбранный чат.
  *
  * У harness переключение на старую сессию занимает время (история тянется
- * постранично), а никакого признака загрузки на телефоне не видно: кажется, что
- * тап не сработал. Полоса появляется в момент тапа по строке сессии и исчезает,
- * как только переписка меняется — по тексту, числу узлов или заголовку чата.
+ * постранично, на телефоне через туннель — секундами), а никакого признака
+ * загрузки на телефоне не видно: кажется, что тап не сработал. Полоса
+ * появляется в момент тапа по строке сессии и исчезает, как только переписка
+ * меняется — по тексту, числу узлов или заголовку чата.
+ *
+ * Полоса ТОЛЬКО показывает происходящее и ничего не блокирует: раньше рядом с
+ * ней жила защита от повторного тапа по списку, и она же была главной причиной
+ * «переключиться нельзя» (разбор — в src/client/08-drawer.js).
  */
 function installSessionLoading() {
   if (!isNarrow()) return () => {}
@@ -60,7 +24,10 @@ function installSessionLoading() {
   bar.appendChild(capsule)
   document.body.appendChild(bar)
 
+  /** Опрос «пришла ли переписка». null — полосы нет. */
   let poll = null
+  /** Когда полосу показывали в последний раз: по нему гасим второй дубль тапа. */
+  let shownAt = 0
 
   const snapshot = () => {
     // Только переписка: заголовок чата обновляется сразу, ещё до того как
@@ -70,7 +37,6 @@ function installSessionLoading() {
   }
 
   const hide = () => {
-    sessionSwitchInFlight = false
     bar.style.display = 'none'
     if (poll !== null) {
       window.clearInterval(poll)
@@ -78,10 +44,19 @@ function installSessionLoading() {
     }
   }
 
-  const show = () => {
+  /**
+   * Показать полосу до смены переписки.
+   *
+   * Один тап приходит двумя событиями — `pointerup` и `click`. Второе из них не
+   * должно начинать отсчёт заново: иначе предел показа ({@link LOADING_MAX_MS})
+   * сдвигался бы на каждом событии, и полоса висела бы на один тап дольше, чем
+   * нужно.
+   */
+  const show = (at) => {
+    if (at - shownAt < LOADING_DEDUPE_MS) return
+    shownAt = at
     hide()
     const before = snapshot()
-    sessionSwitchInFlight = true
     bar.style.display = 'block'
     let elapsed = 0
     poll = window.setInterval(() => {
@@ -97,8 +72,8 @@ function installSessionLoading() {
   const onTap = (event) => {
     const target = event.target
     if (!(target instanceof Element)) return
-    if (target.closest("[class$='_sessionRow']") === null) return
-    show()
+    if (target.closest(SESSION_ROW_SELECTOR) === null) return
+    show(Date.now())
   }
 
   document.addEventListener('pointerup', onTap, true)

@@ -13,7 +13,7 @@ const STYLE_TOUCH_BEHAVIOR = `html {
   /* Серая вспышка поверх нажатого элемента читается как «интерфейс
      увеличился»; свою подсветку нажатия рисуем сами. */
   .${BUTTON_CLASS},
-  [class$='_sessionRow'],
+  ${SESSION_ROW_SELECTOR},
   [class$='_panelRow'],
   [class$='_iconButton'],
   [class$='_trigger'],

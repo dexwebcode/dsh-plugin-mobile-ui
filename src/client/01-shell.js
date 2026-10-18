@@ -19,5 +19,16 @@ const NEW_CHAT_ATTR = 'data-dsh-mobile-newchat'
 /** Штатная кнопка «New Session» в панели сессий: её нажимает новая кнопка. */
 const NEW_SESSION_SELECTOR = "[class$='_newSession']"
 
+/**
+ * Строка сессии в списке чатов.
+ *
+ * Матчим по вхождению, а не по концу класса: у выбранного чата к имени класса
+ * дописывается второй (`…_sessionRow …_selected`), и `[class$='_sessionRow']`
+ * такую строку уже не находит. Из-за этого слой не узнавал строку открытого
+ * чата: тап по ней не закрывал панель, а починка «потерянного» тапа
+ * ({@link installDrawer}) не срабатывала вовсе.
+ */
+const SESSION_ROW_SELECTOR = "[class*='_sessionRow']"
+
 /** Диалог настроек: модальная панель с лентой разделов. */
 const SETTINGS_DIALOG_SELECTOR = "[role='dialog'][aria-modal='true']"
