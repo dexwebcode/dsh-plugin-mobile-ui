@@ -75,7 +75,7 @@ DeepSeek Harness работает локально на вашем компью�
 |---|---|---|
 | DeepSeek Harness | Для всего | Должен быть установлен и запущен (`dsh web`). |
 | Node.js `^22.19.0 || >=24` | Плагин | Указано в `engines` пакета. |
-| Бинарник `ngrok` + бесплатный authtoken | Туннели ngrok | Туннель ищет бинарник в `~/.dsh/bin` или `PATH`; сам не скачивает. |
+| `ngrok` бесплатный authtoken | Туннели ngrok | Туннель создает публичну ссылку. |
 | Бинарник `cloudflared` | Туннели Cloudflare | Аккаунт не нужен; используется при `DSH_TUNNEL_PROVIDER=cloudflared`. |
 | `pnpm` | Установка из CLI | `dsh plugin` передаёт управление пакетами в pnpm. |
 
