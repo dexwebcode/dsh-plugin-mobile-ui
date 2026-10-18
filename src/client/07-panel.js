@@ -24,6 +24,18 @@ function isPanelShown() {
 }
 
 /**
+ * Немедленно применить позу панели.
+ *
+ * Назначается {@link installPanelState}; до установки слоя делать нечего.
+ *
+ * Позу пересчитывают наблюдатель и страховочный интервал, то есть с задержкой до
+ * полусекунды. Открытию и закрытию по тапу ждать нельзя: человек успевал нажать
+ * кнопку ещё раз, пока панель не уехала, и второй тап попадал по ещё открытой
+ * панели. Поэтому кнопка и закрытие применяют позу сами.
+ */
+let applyPanelGeometry = () => {}
+
+/**
  * Переключить панель штатной кнопкой harness.
  *
  * Панель умеет прятаться так, что штатная кнопка перестаёт существовать.
@@ -42,6 +54,9 @@ function togglePanel() {
   // Новое открытие — новый жест: «карантин» предыдущего закрытия к нему не
   // относится, иначе первый же тап внутри снова открытой панели не закрыл бы её.
   lastCloseAt = 0
+  // Панель возвращается этим же тапом, а не ближайшим пересчётом: иначе она
+  // «не отвечает» на первое нажатие, и человек жмёт второй раз.
+  applyPanelGeometry()
   const frame = document.querySelector("[class$='_frame']")
   const collapsedByHarness = frame !== null && frame.hasAttribute('data-sidebar-collapsed')
   // Флаг снят, панель по флагу harness развёрнута — она уже на экране.
@@ -107,6 +122,9 @@ function closePanel() {
   // Панель уезжает сразу и больше не возвращается, даже если harness ещё не
   // переписал свой флаг сворачивания.
   panelClosedByLayer = true
+  // Уезжает именно этим вызовом: ближайший пересчёт мог быть через полсекунды,
+  // и всё это время панель оставалась поверх выбранного чата.
+  applyPanelGeometry()
   // Затемнение и его перехват тапов снимаем сразу: иначе слой полсекунды (до
   // ближайшего пересчёта) продолжал бы съедать нажатия по загруженному чату.
   document.documentElement.removeAttribute(PANEL_ATTR)
@@ -121,12 +139,12 @@ function closePanel() {
  */
 function isPanelNavigation(target) {
   return target instanceof Element &&
-    target.closest("[class$='_sessionRow'], [class$='_newSession'], [class$='_panelRow'], [class$='_triggerRow'], a[href]") !== null
+    target.closest(`${SESSION_ROW_SELECTOR}, [class$='_newSession'], [class$='_panelRow'], [class$='_triggerRow'], a[href]`) !== null
 }
 
 /** Тап пришёл по строке сессии? */
-function isSessionRowTarget(target) {
-  return target instanceof Element && target.closest("[class$='_sessionRow']") !== null
+function isSessionRow(target) {
+  return target instanceof Element && target.closest(SESSION_ROW_SELECTOR) !== null
 }
 
 /** Тап пришёл по самой панели? Тогда закрывать нечего. */
@@ -227,6 +245,9 @@ function installPanelState() {
       else root.setAttribute(PANEL_ATTR, next)
     }
   }
+  // Тап по кнопке слоя и закрытие панели по тапу применяют позу сразу, не
+  // дожидаясь наблюдателя: см. {@link applyPanelGeometry}.
+  applyPanelGeometry = applyGeometry
   // Панель появляется в разметке не мгновенно: считаем состояние по кадру,
   // чтобы не поймать ещё пустой документ.
   const schedule = () => {
@@ -287,6 +308,7 @@ function installPanelState() {
     window.removeEventListener('orientationchange', schedule)
     clearTimeout(settleTimer)
     clearInterval(heartbeat)
+    applyPanelGeometry = () => {}
     root.removeAttribute(PANEL_ATTR)
   }
 }

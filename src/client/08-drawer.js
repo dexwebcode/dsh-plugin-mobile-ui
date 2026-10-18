@@ -58,21 +58,21 @@ function installDrawer() {
    * достаётся уже другому элементу: переключение чата не срабатывало (проверено
    * настоящим тачем). Навигация закрывает панель по `click` — см.
    * {@link onDocumentClick}, где тап уже доставлен строке.
-   */
-  /**
-   * Гасить ли текущий жест по строке сессии.
    *
-   * Решается на `pointerdown`/`touchstart` — то есть по состоянию ДО этого
-   * жеста. Проверять признак загрузки в `click` нельзя: полоса ставит его на
-   * `pointerup` того же жеста, и тогда гасился бы в том числе первый тап —
-   * список переставал открывать чаты вовсе (проверено на живой сборке).
+   * Раньше здесь же стоял запрет на повторный тап по списку, пока идёт
+   * загрузка: тап гасился, а каждое гашение заново поднимало полосу загрузки
+   * ({@link installSessionLoading}) — и выйти из этого состояния было нечем.
+   * Загрузка истории на телефоне идёт секундами, поэтому через пару тапов экран
+   * замирал насовсем: список виден, панель открыта, выбранный чат не
+   * открывается. Теперь тап по строке доходит до React всегда, а потерянный
+   * тап повторяет {@link armRescue}.
    */
-  let swallowGesture = false
-
   const onOutsidePress = (event) => {
     const target = event.target
     const inside = isInsidePanel(target)
-    swallowGesture = inside && isSessionRowTarget(target) && isSessionBusy()
+    // Новый жест по другому месту отменяет прежнюю страховку тапа: см.
+    // {@link armRescue}.
+    if (!inside) cancelRescue()
     // Затемнение могло остаться включённым, когда панель уже уехала (например,
     // после возврата из настроек или перерисовки). Тогда этот слой молча съедал
     // бы все тапы — «ничего не нажимается». Поэтому: снимаем состояние и
@@ -97,6 +97,75 @@ function installDrawer() {
     if (isInsidePanel(target)) return
     if (target instanceof Element && target.closest('input, textarea, [contenteditable="true"]') === null) return
     closePanel()
+  }
+
+  /**
+   * Заголовок открытого чата. `null` — заголовка нет (новый чат): сверять нечего.
+   *
+   * Смена заголовка — единственный дешёвый признак того, что переключение
+   * началось: harness ставит его сразу, ещё до того как подъедет история.
+   */
+  const currentChatTitle = () => {
+    const crumbs = document.querySelector("[class$='_crumbs']")
+    return crumbs === null ? null : (crumbs.textContent ?? '').trim()
+  }
+
+  /** Отложенное повторение тапа по строке сессии: см. {@link armRescue}. */
+  let rescueTimer = 0
+  let rescueTap = null
+
+  const cancelRescue = () => {
+    if (rescueTimer !== 0) {
+      window.clearTimeout(rescueTimer)
+      rescueTimer = 0
+    }
+    rescueTap = null
+  }
+
+  /**
+   * Доовести тап по строке сессии до переключения.
+   *
+   * На телефоне тап по строке иногда не доходит до React: браузер отдаёт его
+   * наведению (у строки есть карточка и бегущий заголовок), считает началом
+   * прокрутки или не синтезирует `click` внутри списка. Снаружи это выглядит
+   * так, будто чат открывается только со второго раза, — и человек
+   * действительно жмёт второй раз, после чего всё работает.
+   *
+   * Поэтому повторяем ровно это: ждём {@link SESSION_TAP_RESCUE_MS} и, если
+   * заголовок чата не сменился, нажимаем тот же узел программно. Настоящий
+   * `click` отменяет страховку ({@link onDocumentClick}), так что при живом тапе
+   * второго нажатия не будет.
+   *
+   * Панель до срабатывания не закрываем: строка должна остаться в разметке.
+   */
+  const armRescue = (target) => {
+    const row = target instanceof Element ? target.closest(SESSION_ROW_SELECTOR) : null
+    if (row === null) return
+    const before = currentChatTitle()
+    // Тап по уже открытому чату: переключаться некуда, повторять нечего. В
+    // строке заголовок стоит вместе с пометкой статуса и временем, поэтому
+    // сверяем по началу.
+    if (before !== null && before !== '' &&
+      (row.textContent ?? '').includes(before.slice(0, SESSION_TITLE_MATCH_MAX))) return
+    cancelRescue()
+    rescueTap = { element: target, row }
+    rescueTimer = window.setTimeout(() => {
+      rescueTimer = 0
+      const tap = rescueTap
+      rescueTap = null
+      if (tap === null) return
+      // Строку могли перерисовать: тогда жмём тот же узел, а если и он ушёл из
+      // документа — саму строку.
+      const element = tap.element.isConnected ? tap.element : tap.row
+      if (!element.isConnected) return
+      if (currentChatTitle() !== before) {
+        // Переключение уже началось, а `click` до слоя не дошёл — закрываем
+        // панель сами, иначе она осталась бы поверх открытого чата.
+        closePanel()
+        return
+      }
+      element.click()
+    }, SESSION_TAP_RESCUE_MS)
   }
 
   /**
@@ -138,16 +207,8 @@ function installDrawer() {
       // момент доставки `click` уже могла отстать, и тап по строке не закрывал
       // панель вовсе — чат менялся под ней, а экран оставался тем же.
       if (!isPanelNavigation(target)) return
-      // Пока предыдущий чат ещё грузится, второй тап по списку harness не
-      // переживает: открытие теряет ссылку на сессию (`Session reference …
-      // is released`), и экран навсегда остаётся на «Loading history…». Такой
-      // тап гасим — полоса загрузки уже показывает, что запрос в пути.
-      if (swallowGesture) {
-        swallowGesture = false
-        event.preventDefault()
-        event.stopPropagation()
-        return
-      }
+      // Тап дошёл сам — повторное нажатие не нужно: см. {@link armRescue}.
+      cancelRescue()
       deferClose()
       return
     }
@@ -162,18 +223,18 @@ function installDrawer() {
    *
    * На части браузеров (и в установленном приложении) тап по элементу внутри
    * прокручиваемого списка не даёт `click` — тогда меню оставалось открытым.
-   * Здесь закрытие ставится с задержкой и отменяется, если `click` всё же был.
+   * Для строки сессии закрытие по таймеру не годится: строка исчезла бы из
+   * разметки раньше, чем до неё дошёл {@link armRescue}.
    */
   const onPanelPress = (event) => {
     const target = event.target
     if (!isInsidePanel(target)) return
     if (!isPanelNavigation(target)) return
-    // Гасим повторный тап по списку, пока идёт загрузка выбранного чата: см.
-    // {@link onDocumentClick}. Панель в этом случае тоже не закрываем — иначе
-    // выглядело бы, будто тап сработал, а чат остался прежним. Решение принято на
-    // `pointerdown` (см. {@link swallowGesture}), поэтому здесь только читаем его.
-    if (swallowGesture) return
     cancelPendingClose()
+    if (isSessionRow(target)) {
+      armRescue(target)
+      return
+    }
     pendingClose = window.setTimeout(() => {
       pendingClose = 0
       closePanel()
@@ -197,6 +258,8 @@ function installDrawer() {
 
   return () => {
     observer.disconnect()
+    cancelRescue()
+    cancelPendingClose()
     document.removeEventListener('pointerdown', onOutsidePress, true)
     document.removeEventListener('touchstart', onOutsidePress, true)
     document.removeEventListener('pointerup', onPanelPress, true)
