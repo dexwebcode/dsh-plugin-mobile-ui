@@ -100,17 +100,31 @@ function installHeaderStatus() {
   }
 
   render()
-  // Разметка в живом чате меняется непрерывно: этап и его длительность
-  // перерисовываются каждую секунду, поэтому наблюдаем за всем документом.
-  const observer = new MutationObserver(render)
+  // Разметка в живом чате меняется непрерывно — при потоковом ответе каждая
+  // порция текста даёт мутацию. Пересчитывать плашку на каждую из них дорого:
+  // три поиска по всему документу на токен подвешивали телефон. Поэтому
+  // пересчёт не чаще раза в 120 мс.
+  let scheduled = false
+  let lastRun = 0
+  const schedule = () => {
+    if (scheduled) return
+    scheduled = true
+    const wait = Math.max(0, STATUS_RENDER_MIN_INTERVAL_MS - (Date.now() - lastRun))
+    window.setTimeout(() => {
+      scheduled = false
+      lastRun = Date.now()
+      render()
+    }, wait)
+  }
+  const observer = new MutationObserver(schedule)
   observer.observe(document.body, { childList: true, subtree: true, characterData: true })
-  window.addEventListener('resize', render)
-  window.addEventListener('orientationchange', render)
+  window.addEventListener('resize', schedule)
+  window.addEventListener('orientationchange', schedule)
 
   return () => {
     observer.disconnect()
-    window.removeEventListener('resize', render)
-    window.removeEventListener('orientationchange', render)
+    window.removeEventListener('resize', schedule)
+    window.removeEventListener('orientationchange', schedule)
     if (slot !== null) slot.remove()
     slot = null
   }

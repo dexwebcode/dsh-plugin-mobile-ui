@@ -29,11 +29,23 @@ function isPanelShown() {
  * Панель умеет прятаться так, что штатная кнопка перестаёт существовать.
  * Тогда снять затемнение обязан сам слой: закрыть панель иначе нечем, и
  * экран остался бы заблокированным.
+ *
+ * Кнопка слоя — единственный способ снова показать панель, поэтому именно она
+ * снимает {@link panelClosedByLayer}. Флаг harness при этом может говорить
+ * «развёрнута» (его вернула перерисовка после переключения чата): тогда
+ * нажимать штатную кнопку нельзя — она свернула бы уже показанную панель, — и
+ * достаточно просто снять наш флаг.
  */
 function togglePanel() {
-  // Новое открытие отменяет недавний запрос на закрытие: иначе панель осталась
-  // бы закрытой до конца «карантина».
-  panelCloseRequestedAt = 0
+  const forced = panelClosedByLayer
+  panelClosedByLayer = false
+  // Новое открытие — новый жест: «карантин» предыдущего закрытия к нему не
+  // относится, иначе первый же тап внутри снова открытой панели не закрыл бы её.
+  lastCloseAt = 0
+  const frame = document.querySelector("[class$='_frame']")
+  const collapsedByHarness = frame !== null && frame.hasAttribute('data-sidebar-collapsed')
+  // Флаг снят, панель по флагу harness развёрнута — она уже на экране.
+  if (forced && !collapsedByHarness) return
   const control = findToggle()
   if (control !== null) {
     control.click()
@@ -54,22 +66,39 @@ function togglePanel() {
 let lastCloseAt = 0
 
 /**
- * До какого момента панель считается закрытой независимо от состояния harness.
+ * Закрыта ли панель по решению слоя.
  *
- * Тап по строке сессии закрывает панель нажатием штатной кнопки, но harness
- * успевает перерисовать список (активная строка) раньше, чем переключит свой
- * флаг: наш пересчёт видел «панель открыта» и возвращал её на место — со стороны
- * это выглядело как повторный сдвиг границ меню перед переключением чата. Пока
- * идёт такой запрос на закрытие, панель держим закрытой.
+ * Раньше здесь стоял «карантин» на 400 мс: панель держалась закрытой, пока
+ * harness не перепишет свой флаг. На медленном телефоне этого окна не хватало:
+ * перерисовка списка сессий возвращала `data-sidebar-collapsed=false` уже после
+ * карантина, наш пересчёт видел «панель открыта» — и панель приезжала обратно
+ * поверх только что открытого чата. Со стороны это выглядело как «тап по сессии
+ * ничего не делает: остаётся тот же экран».
+ *
+ * Теперь это не таймер, а состояние: закрыли — значит закрыто, пока человек сам
+ * не нажмёт кнопку слоя ({@link togglePanel}).
  */
-let panelCloseRequestedAt = 0
+let panelClosedByLayer = false
 
 /**
  * Закрыть показанную панель.
  *
- * Отдельно от {@link togglePanel} по смыслу: вызывать её можно только когда
- * панель на экране, иначе штатная кнопка откроет её вместо закрытия. Повторный
- * вызов внутри одного жеста игнорируется — см. {@link lastCloseAt}.
+ * Панель уезжает только нашими инлайновыми стилями — штатную кнопку harness
+ * здесь НЕ нажимаем, и это важно.
+ *
+ * Нажатие штатной кнопки переводит панель из развёрнутого состояния в рейл, а
+ * вместе с ним React размонтирует развёрнутый список: строка сессии исчезает из
+ * документа, и открытие, начатое этим же тапом, теряет ссылку на сессию. В
+ * консоли это `Session reference "…" is released`, а на экране — вечное
+ * «Loading history…»: телефон медленный, открытие ещё в полёте, список уже
+ * размонтирован. На быстром клиенте гонка не видна, поэтому раньше казалось, что
+ * «всё работает».
+ *
+ * Инлайновый `transform` перебивает и каскад, и флаг harness, а список при этом
+ * остаётся смонтированным — открытие доходит до конца. Пересчёт геометрии
+ * (см. {@link installPanelState}) применяет позу закрытой панели.
+ *
+ * Повторный вызов внутри одного жеста игнорируется — см. {@link lastCloseAt}.
  */
 function closePanel() {
   const now = Date.now()
@@ -77,12 +106,9 @@ function closePanel() {
   lastCloseAt = now
   // Панель уезжает сразу и больше не возвращается, даже если harness ещё не
   // переписал свой флаг сворачивания.
-  panelCloseRequestedAt = now + PANEL_CLOSE_GUARD_MS
-  const control = findToggle()
-  if (control !== null) {
-    control.click()
-    return
-  }
+  panelClosedByLayer = true
+  // Затемнение и его перехват тапов снимаем сразу: иначе слой полсекунды (до
+  // ближайшего пересчёта) продолжал бы съедать нажатия по загруженному чату.
   document.documentElement.removeAttribute(PANEL_ATTR)
 }
 
@@ -96,6 +122,11 @@ function closePanel() {
 function isPanelNavigation(target) {
   return target instanceof Element &&
     target.closest("[class$='_sessionRow'], [class$='_newSession'], [class$='_panelRow'], [class$='_triggerRow'], a[href]") !== null
+}
+
+/** Тап пришёл по строке сессии? */
+function isSessionRowTarget(target) {
+  return target instanceof Element && target.closest("[class$='_sessionRow']") !== null
 }
 
 /** Тап пришёл по самой панели? Тогда закрывать нечего. */
@@ -138,9 +169,8 @@ function installPanelState() {
     const side = document.querySelector("[class$='_sidebarCol']")
     if (side === null) return
     const frame = document.querySelector("[class$='_frame']")
-    // Запрос на закрытие важнее флага harness: см. {@link panelCloseRequestedAt}.
-    const closing = Date.now() < panelCloseRequestedAt
-    const collapsed = closing || (frame !== null && frame.hasAttribute('data-sidebar-collapsed'))
+    // Решение слоя важнее флага harness: см. {@link panelClosedByLayer}.
+    const collapsed = panelClosedByLayer || (frame !== null && frame.hasAttribute('data-sidebar-collapsed'))
     // Та же ширина, что и в CSS: правый край проходит между «+» и «⋮», поэтому
     // в полосе справа видно только «⋮».
     const width = Math.min(window.innerWidth - 56, 420)
@@ -154,12 +184,25 @@ function installPanelState() {
     style.transition = 'transform 0.26s cubic-bezier(0.4, 0, 0.2, 1), visibility 0.26s'
     style.transform = collapsed ? 'translateX(-105%)' : 'none'
     style.visibility = collapsed ? 'hidden' : 'visible'
+    // Колонки кадра фиксируем: панель на телефоне и так вынесена из раскладки
+    // (position: fixed), но harness при открытии/сворачивании переписывает
+    // `grid-template-columns` (280px ↔ 56px), и контент на кадр успевал
+    // пересчитаться — со стороны это выглядело как «всё растянулось».
+    if (frame !== null && frame.style.gridTemplateColumns !== MOBILE_GRID_COLUMNS) {
+      frame.style.gridTemplateColumns = MOBILE_GRID_COLUMNS
+    }
     // Внутренняя колонка панели и отступы её строк — тоже инлайново. Список
     // сессий harness перерисовывает при каждом переключении чата, и если в этот
     // момент класс колонки оказывается другим, правила слоя на кадр перестают
     // совпадать: строки успевают разъехаться на всю ширину и вернуться — со
     // стороны это выглядело как «границы меню разделяются и снова сдвигаются».
-    const inner = side.querySelector("[class*='_quietBars']") ?? side.firstElementChild
+    //
+    // Колонку ищем по строке с логотипом, а не по имени класса: после закрытия и
+    // повторного открытия harness пересобирает панель, и класс `_quietBars`
+    // пропадает (остаётся `_root`). Тогда инлайновые отступы попадали не тому
+    // элементу — строки уезжали вправо, а содержимое вылезало за панель.
+    const logoRow = side.querySelector("[class*='_logoRow']")
+    const inner = logoRow?.parentElement ?? side.querySelector("[class*='_quietBars']") ?? side.firstElementChild
     if (inner !== null) {
       inner.style.width = '100%'
       inner.style.paddingLeft = '2px'
@@ -204,12 +247,23 @@ function installPanelState() {
   // Наблюдаем весь документ: панель и её атрибуты появляются и меняются в
   // любой момент, а привязка к конкретным узлам ломается при их пересоздании.
   //
-  // Геометрию переставляем сразу, до отрисовки кадра: harness может переписать
-  // ширину панели своим инлайновым стилем (при открытии и закрытии он меняет
-  // раскладку кадра), и если ждать троттлинг, панель на кадр-другой «прыгала» к
-  // штатному размеру — со стороны это выглядело как скачок краёв при выдвижении.
-  const observer = new MutationObserver(() => {
-    applyGeometry()
+  // Геометрию переставляем сразу, до отрисовки кадра, но только когда мутация
+  // касается кадра или панели: при потоковом ответе мутации идут сотнями в
+  // секунду, и пересчёт на каждую подвешивал телефон.
+  const relevant = (records) => {
+    const side = document.querySelector("[class$='_sidebarCol']")
+    const frame = document.querySelector("[class$='_frame']")
+    if (side === null) return false
+    for (const record of records) {
+      const target = record.target
+      if (!(target instanceof Node)) continue
+      if (side.contains(target) || (frame !== null && frame.contains(target))) return true
+      if (target instanceof Element && target.querySelector?.("[class$='_sidebarCol']") != null) return true
+    }
+    return false
+  }
+  const observer = new MutationObserver((records) => {
+    if (relevant(records)) applyGeometry()
     schedule()
   })
   observer.observe(document.documentElement, {
@@ -221,12 +275,18 @@ function installPanelState() {
   window.addEventListener('resize', schedule)
   window.addEventListener('orientationchange', schedule)
   schedule()
+  // Страховка от залипшего состояния: если затемнение осталось включённым, а
+  // панель уже уехала (или наоборот), один пересчёт в полсекунды это исправит.
+  // Иначе полноэкранное затемнение молча съедало бы все тапы — «интерфейс
+  // завис», и переключиться по чатам было нельзя.
+  const heartbeat = window.setInterval(apply, 500)
 
   return () => {
     observer.disconnect()
     window.removeEventListener('resize', schedule)
     window.removeEventListener('orientationchange', schedule)
     clearTimeout(settleTimer)
+    clearInterval(heartbeat)
     root.removeAttribute(PANEL_ATTR)
   }
 }

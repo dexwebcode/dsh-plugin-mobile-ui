@@ -22,6 +22,7 @@ function trackLayout() {
       installDrawer(),
       installNewChatButton(),
       installSettingsScroll(),
+      installSessionLoading(),
     ]
   }
 

@@ -59,10 +59,31 @@ function installDrawer() {
    * настоящим тачем). Навигация закрывает панель по `click` — см.
    * {@link onDocumentClick}, где тап уже доставлен строке.
    */
+  /**
+   * Гасить ли текущий жест по строке сессии.
+   *
+   * Решается на `pointerdown`/`touchstart` — то есть по состоянию ДО этого
+   * жеста. Проверять признак загрузки в `click` нельзя: полоса ставит его на
+   * `pointerup` того же жеста, и тогда гасился бы в том числе первый тап —
+   * список переставал открывать чаты вовсе (проверено на живой сборке).
+   */
+  let swallowGesture = false
+
   const onOutsidePress = (event) => {
-    if (!isPanelShown()) return
     const target = event.target
-    if (isInsidePanel(target)) return
+    const inside = isInsidePanel(target)
+    swallowGesture = inside && isSessionRowTarget(target) && isSessionBusy()
+    // Затемнение могло остаться включённым, когда панель уже уехала (например,
+    // после возврата из настроек или перерисовки). Тогда этот слой молча съедал
+    // бы все тапы — «ничего не нажимается». Поэтому: снимаем состояние и
+    // пропускаем событие дальше, ничего не гася.
+    if (!isPanelShown()) {
+      if (document.documentElement.getAttribute(PANEL_ATTR) !== null) {
+        document.documentElement.removeAttribute(PANEL_ATTR)
+      }
+      return
+    }
+    if (inside) return
     if (target instanceof Element && target.closest(`.${BUTTON_CLASS}`) !== null) return
     event.preventDefault()
     event.stopPropagation()
@@ -82,23 +103,87 @@ function installDrawer() {
    * `click` дообрабатывает то, что не должен трогать `pointerdown`: закрытие
    * панели по тапу на строку сессии или на ссылку.
    *
-   * Здесь это безопасно: адресат `click` уже вычислен, поэтому панель можно
-   * убирать — событие всё равно дойдёт до React и переключит чат. Именно
-   * поэтому закрытие на навигации живёт здесь, а не в {@link onOutsidePress}.
+   * Закрытие отложено на макрозадачу: сначала событие должно дойти до React и
+   * переключить чат, и только потом панель уезжает. Раньше кнопка сворачивания
+   * нажималась прямо в обработчике — панель перерисовывалась раньше, чем
+   * доходил `click`, и переключение чата терялось: меню оставалось открытым, а
+   * выбранный чат не открывался.
    */
+  const deferClose = () => {
+    cancelPendingClose()
+    window.setTimeout(() => { closePanel() }, 0)
+  }
+
+  /**
+   * Отложенное закрытие на случай, когда `click` по строке не приходит вовсе.
+   *
+   * Ждём дольше, чем браузер тратит на синтетический `click`: если пришёл
+   * `click`, он отменит это закрытие и закроет панель сам — уже после того, как
+   * тап дойдёт до React. Иначе панель уезжала раньше строки, строка исчезала из
+   * разметки, и чат не открывался: полоса загрузки гасла на пустом экране.
+   */
+  let pendingClose = 0
+  const cancelPendingClose = () => {
+    if (pendingClose !== 0) {
+      window.clearTimeout(pendingClose)
+      pendingClose = 0
+    }
+  }
+
   const onDocumentClick = (event) => {
-    if (!isPanelShown()) return
     const target = event.target
     if (isInsidePanel(target)) {
-      if (isPanelNavigation(target)) closePanel()
+      // Тап внутри панели закрывает её только если он что-то открывает. Проверку
+      // «панель показана» здесь не делаем: на медленном телефоне геометрия в
+      // момент доставки `click` уже могла отстать, и тап по строке не закрывал
+      // панель вовсе — чат менялся под ней, а экран оставался тем же.
+      if (!isPanelNavigation(target)) return
+      // Пока предыдущий чат ещё грузится, второй тап по списку harness не
+      // переживает: открытие теряет ссылку на сессию (`Session reference …
+      // is released`), и экран навсегда остаётся на «Loading history…». Такой
+      // тап гасим — полоса загрузки уже показывает, что запрос в пути.
+      if (swallowGesture) {
+        swallowGesture = false
+        event.preventDefault()
+        event.stopPropagation()
+        return
+      }
+      deferClose()
       return
     }
+    if (!isPanelShown()) return
+    cancelPendingClose()
     if (target instanceof Element && target.closest(`.${BUTTON_CLASS}`) !== null) return
     closePanel()
   }
 
+  /**
+   * Тап по строке сессии: страховка на случай, когда `click` до нас не дошёл.
+   *
+   * На части браузеров (и в установленном приложении) тап по элементу внутри
+   * прокручиваемого списка не даёт `click` — тогда меню оставалось открытым.
+   * Здесь закрытие ставится с задержкой и отменяется, если `click` всё же был.
+   */
+  const onPanelPress = (event) => {
+    const target = event.target
+    if (!isInsidePanel(target)) return
+    if (!isPanelNavigation(target)) return
+    // Гасим повторный тап по списку, пока идёт загрузка выбранного чата: см.
+    // {@link onDocumentClick}. Панель в этом случае тоже не закрываем — иначе
+    // выглядело бы, будто тап сработал, а чат остался прежним. Решение принято на
+    // `pointerdown` (см. {@link swallowGesture}), поэтому здесь только читаем его.
+    if (swallowGesture) return
+    cancelPendingClose()
+    pendingClose = window.setTimeout(() => {
+      pendingClose = 0
+      closePanel()
+    }, PANEL_CLICK_FALLBACK_MS)
+  }
+
   document.addEventListener('pointerdown', onOutsidePress, true)
   document.addEventListener('touchstart', onOutsidePress, { capture: true, passive: false })
+  document.addEventListener('pointerup', onPanelPress, true)
+  document.addEventListener('touchend', onPanelPress, true)
   document.addEventListener('focusin', onFocusIn, true)
   document.addEventListener('click', onDocumentClick, true)
 
@@ -114,6 +199,8 @@ function installDrawer() {
     observer.disconnect()
     document.removeEventListener('pointerdown', onOutsidePress, true)
     document.removeEventListener('touchstart', onOutsidePress, true)
+    document.removeEventListener('pointerup', onPanelPress, true)
+    document.removeEventListener('touchend', onPanelPress, true)
     document.removeEventListener('focusin', onFocusIn, true)
     document.removeEventListener('click', onDocumentClick, true)
     if (button !== null && button.isConnected) button.remove()
