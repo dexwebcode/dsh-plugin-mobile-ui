@@ -29,10 +29,10 @@ function apply(ctx) {
         uninstallVpnHint()
         removeStyles()
       }
-    }, 'dsh-mobile-ui: mobile layer')
+    }, 'dsh-plugin-mobile-ui: mobile layer')
   } catch (error) {
     // Слой косметический: его сбой не должен ломать загрузку интерфейса.
-    console.warn(`dsh-mobile-ui: could not install the mobile layer: ${String(error)}`)
+    console.warn(`dsh-plugin-mobile-ui: could not install the mobile layer: ${String(error)}`)
   }
 }
 

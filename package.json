@@ -1,9 +1,28 @@
 {
-  "name": "dsh-mobile-ui",
+  "name": "dsh-plugin-mobile-ui",
   "version": "3.6.0",
   "private": false,
   "description": "Self-contained mobile access for DeepSeek Harness: one install brings a password-protected public URL over ngrok (cloudflared fallback) serving the official web UI with the mobile layer. The tunnel and the password gate are vendored inside this package, so no other plugin is required.",
   "license": "MIT",
+  "author": "DEXWEBCODE",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/dexwebcode/dsh-plugin-mobile-ui.git"
+  },
+  "homepage": "https://github.com/dexwebcode/dsh-plugin-mobile-ui#readme",
+  "bugs": {
+    "url": "https://github.com/dexwebcode/dsh-plugin-mobile-ui/issues"
+  },
+  "keywords": [
+    "dsh",
+    "dsh-plugin",
+    "deepseek-harness",
+    "mobile",
+    "pwa",
+    "ngrok",
+    "tunnel",
+    "remote-access"
+  ],
   "type": "module",
   "main": "lib/host/index.js",
   "exports": {

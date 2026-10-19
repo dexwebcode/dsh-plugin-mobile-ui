@@ -64,7 +64,7 @@ function writeState(state) {
   try {
     writeFileSync(join(dshHome(), STATE_FILE), `${JSON.stringify(state, null, 2)}\n`, 'utf8')
   } catch (error) {
-    console.warn(`dsh-mobile-ui: could not save the ngrok usage: ${String(error)}`)
+    console.warn(`dsh-plugin-mobile-ui: could not save the ngrok usage: ${String(error)}`)
   }
 }
 
@@ -241,7 +241,7 @@ export function installUsage(ctx, config) {
       disposed = true
       clearInterval(timer)
     }
-  }, 'dsh-mobile-ui: ngrok usage')
+  }, 'dsh-plugin-mobile-ui: ngrok usage')
 
   ctx.effect(() => ctx.webServer.register({
     kind: 'exact',
@@ -259,5 +259,5 @@ export function installUsage(ctx, config) {
       }
       sendJson(res, 200, collectUsage(config))
     },
-  }), 'dsh-mobile-ui: usage route')
+  }), 'dsh-plugin-mobile-ui: usage route')
 }

@@ -1,4 +1,4 @@
-# dsh-mobile-ui
+# dsh-plugin-mobile-ui
 
 > **Язык / Language:** [Русский](#dsh-plugin-mobile-ui-ru) · [English](#dsh-plugin-mobile-ui-en)
 
@@ -50,9 +50,9 @@ DeepSeek Harness работает локально на вашем компью�
 
 Три части поставляются вместе:
 
-- **`dsh-mobile-ui/relay`** — вход по паролю и TLS перед петлевым веб-сервером.
-- **`dsh-mobile-ui/tunnel`** — публикует relay через ngrok (или Cloudflare Tunnel).
-- **`dsh-mobile-ui`** — мобильный слой поверх официального веб-интерфейса.
+- **`dsh-plugin-mobile-ui/relay`** — вход по паролю и TLS перед петлевым веб-сервером.
+- **`dsh-plugin-mobile-ui/tunnel`** — публикует relay через ngrok (или Cloudflare Tunnel).
+- **`dsh-plugin-mobile-ui`** — мобильный слой поверх официального веб-интерфейса.
 
 ### Возможности
 
@@ -91,7 +91,7 @@ DeepSeek Harness работает локально на вашем компью�
 1. Установите плагин (см. [Установка](#установка)):
 
    ```bash
-   dsh plugin add github:dexwebcode/dsh-plugin-mobile-ui
+   dsh plugin --profile web add github:dexwebcode/dsh-plugin-mobile-ui
    ```
 
 2. Запустите DeepSeek Harness:
@@ -119,15 +119,21 @@ DeepSeek Harness работает локально на вашем компью�
 
 Плагин устанавливается в **профиль** DeepSeek Harness. Используйте любой из способов ниже.
 
-#### Вариант A — из GitHub (рекомендуется)
+#### Вариант A — из npm (одна команда, для Plugin Hub)
 
 ```bash
-dsh plugin add github:dexwebcode/dsh-plugin-mobile-ui
+dsh plugin --profile web add dsh-plugin-mobile-ui
+```
+
+#### Вариант B — из GitHub
+
+```bash
+dsh plugin --profile web add github:dexwebcode/dsh-plugin-mobile-ui
 ```
 
 В репозитории уже лежит собранный вывод (`lib/` и `vendor/relay.js`), поэтому установка из git работает сразу.
 
-#### Вариант B — из локальной сборки
+#### Вариант C — из локальной сборки
 
 ```bash
 # в клонированном репозитории
@@ -135,13 +141,13 @@ npm run build      # или: npm pack  (pack запускает build через
 npm pack
 ```
 
-Получится `dsh-mobile-ui-<версия>.tgz`. Установите его с полным путём:
+Получится `dsh-plugin-mobile-ui-<версия>.tgz`. Установите его с полным путём:
 
 ```bash
-dsh plugin add "C:\путь\к\dsh-mobile-ui-3.6.0.tgz"
+dsh plugin --profile web add "C:\путь\к\dsh-plugin-mobile-ui-3.6.0.tgz"
 ```
 
-#### Вариант C — менеджер плагинов в веб-интерфейсе
+#### Вариант D — менеджер плагинов в веб-интерфейсе
 
 Откройте DeepSeek Harness, перейдите в **Настройки → Плагины** и добавьте плагин там (репозиторий GitHub или собранный tarball).
 
@@ -236,7 +242,7 @@ dsh plugin add "C:\путь\к\dsh-mobile-ui-3.6.0.tgz"
 
 #### Пример 1 — первое подключение телефона
 
-1. `dsh plugin add github:dexwebcode/dsh-plugin-mobile-ui`
+1. `dsh plugin --profile web add github:dexwebcode/dsh-plugin-mobile-ui`
 2. `dsh web`
 3. Настройки → Mobile UI → вставьте authtoken ngrok → Сохранить.
 4. Задайте пароль (≥ 10 символов).
@@ -252,7 +258,7 @@ dsh plugin add "C:\путь\к\dsh-mobile-ui-3.6.0.tgz"
 #### Пример 3 — офлайн-установка из tarball
 
 1. В репозитории: `npm run build && npm pack`.
-2. `dsh plugin add "C:\путь\к\dsh-mobile-ui-3.6.0.tgz"`.
+2. `dsh plugin --profile web add "C:\путь\к\dsh-plugin-mobile-ui-3.6.0.tgz"`.
 3. Ожидаемый результат: плагин установлен, разделы настроек появляются после перезапуска `dsh web`.
 
 ### Решение проблем
@@ -281,9 +287,9 @@ dsh plugin add "C:\путь\к\dsh-mobile-ui-3.6.0.tgz"
 Повторите установку новой версии:
 
 ```bash
-dsh plugin add github:dexwebcode/dsh-plugin-mobile-ui
+dsh plugin --profile web add github:dexwebcode/dsh-plugin-mobile-ui
 # или конкретный/новый tarball
-dsh plugin add "C:\путь\к\dsh-mobile-ui-<новая-версия>.tgz"
+dsh plugin --profile web add "C:\путь\к\dsh-plugin-mobile-ui-<новая-версия>.tgz"
 ```
 
 Собранный вывод лежит в репозитории, поэтому установка из git сразу берёт актуальное состояние.
@@ -291,7 +297,7 @@ dsh plugin add "C:\путь\к\dsh-mobile-ui-<новая-версия>.tgz"
 #### Удаление
 
 ```bash
-dsh plugin remove dsh-mobile-ui
+dsh plugin --profile web remove dsh-plugin-mobile-ui
 ```
 
 или удалите в **Настройки → Плагины**.
@@ -339,7 +345,7 @@ dsh plugin remove dsh-mobile-ui
 - Мобильный слой рассчитан на узкие экраны и не меняет десктопную раскладку.
 
 > [!NOTE]
-> Имя `dsh-mobile-ui` в npm сейчас указывает на старый пакет (`0.2.11`, только мобильный слой). Чтобы установить **эту** версию (с туннелем, входом и подключением), устанавливайте из GitHub или из собранного tarball, как описано выше.
+> В npm этот плагин называется `dsh-plugin-mobile-ui`. Не путайте с пакетом `dsh-mobile-ui` (`0.2.11`, только мобильный слой) — это другой, более старый проект.
 
 ### Лицензия
 
@@ -389,9 +395,9 @@ Concretely, after installation you open the local web UI, paste one token, set a
 
 The three pieces are shipped together:
 
-- **`dsh-mobile-ui/relay`** — password sign-in and TLS in front of the loopback web server.
-- **`dsh-mobile-ui/tunnel`** — publishes the relay through ngrok (or Cloudflare Tunnel).
-- **`dsh-mobile-ui`** — the mobile layer over the official web UI.
+- **`dsh-plugin-mobile-ui/relay`** — password sign-in and TLS in front of the loopback web server.
+- **`dsh-plugin-mobile-ui/tunnel`** — publishes the relay through ngrok (or Cloudflare Tunnel).
+- **`dsh-plugin-mobile-ui`** — the mobile layer over the official web UI.
 
 ### Features
 
@@ -430,7 +436,7 @@ The tunnel binary (`ngrok` or `cloudflared`) is **required** for public access. 
 1. Install the plugin (see [Installation](#installation)):
 
    ```bash
-   dsh plugin add github:dexwebcode/dsh-plugin-mobile-ui
+   dsh plugin --profile web add github:dexwebcode/dsh-plugin-mobile-ui
    ```
 
 2. Start DeepSeek Harness:
@@ -461,7 +467,7 @@ The plugin is a DeepSeek Harness plugin installed into a **profile**. Use one of
 #### Option A — from GitHub (recommended)
 
 ```bash
-dsh plugin add github:dexwebcode/dsh-plugin-mobile-ui
+dsh plugin --profile web add github:dexwebcode/dsh-plugin-mobile-ui
 ```
 
 The repository ships its built output (`lib/` and `vendor/relay.js`), so a git install works directly.
@@ -474,10 +480,10 @@ npm run build      # or: npm pack  (pack runs build via the prepack script)
 npm pack
 ```
 
-This produces `dsh-mobile-ui-<version>.tgz`. Install it with the full path:
+This produces `dsh-plugin-mobile-ui-<version>.tgz`. Install it with the full path:
 
 ```bash
-dsh plugin add "C:\path\to\dsh-mobile-ui-3.6.0.tgz"
+dsh plugin --profile web add "C:\path\to\dsh-plugin-mobile-ui-3.6.0.tgz"
 ```
 
 #### Option C — the plugin manager in the web UI
@@ -575,7 +581,7 @@ The tunnel process is detached and kept alive across DSH restarts by design (the
 
 #### Example 1 — connect your phone for the first time
 
-1. `dsh plugin add github:dexwebcode/dsh-plugin-mobile-ui`
+1. `dsh plugin --profile web add github:dexwebcode/dsh-plugin-mobile-ui`
 2. `dsh web`
 3. Settings → Mobile UI → paste ngrok authtoken → Save.
 4. Set a password (≥ 10 characters).
@@ -591,7 +597,7 @@ The tunnel process is detached and kept alive across DSH restarts by design (the
 #### Example 3 — offline install from a tarball
 
 1. `npm run build && npm pack` in the repository.
-2. `dsh plugin add "C:\path\to\dsh-mobile-ui-3.6.0.tgz"`.
+2. `dsh plugin --profile web add "C:\path\to\dsh-plugin-mobile-ui-3.6.0.tgz"`.
 3. Expected result: the plugin is installed and the settings sections appear after restarting `dsh web`.
 
 ### Troubleshooting
@@ -620,9 +626,9 @@ The tunnel process is detached and kept alive across DSH restarts by design (the
 Re-run the install for the new version:
 
 ```bash
-dsh plugin add github:dexwebcode/dsh-plugin-mobile-ui
+dsh plugin --profile web add github:dexwebcode/dsh-plugin-mobile-ui
 # or a pinned/new tarball
-dsh plugin add "C:\path\to\dsh-mobile-ui-<new-version>.tgz"
+dsh plugin --profile web add "C:\path\to\dsh-plugin-mobile-ui-<new-version>.tgz"
 ```
 
 The built output is committed, so a git install picks up the latest state.
@@ -630,7 +636,7 @@ The built output is committed, so a git install picks up the latest state.
 #### Uninstall
 
 ```bash
-dsh plugin remove dsh-mobile-ui
+dsh plugin --profile web remove dsh-plugin-mobile-ui
 ```
 
 or remove it in **Settings → Plugins**.
@@ -678,7 +684,7 @@ or remove it in **Settings → Plugins**.
 - The mobile layer targets narrow viewports; it does not alter the desktop layout.
 
 > [!NOTE]
-> The npm name `dsh-mobile-ui` currently points to an older package (`0.2.11`, mobile layer only). To install **this** version (with the tunnel, sign-in and pairing), install from GitHub or a built tarball as described above.
+> On npm this plugin is published as `dsh-plugin-mobile-ui`. Do not confuse it with `dsh-mobile-ui` (`0.2.11`, mobile layer only) — that is a different, older project.
 
 ### License
 

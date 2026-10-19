@@ -1,5 +1,5 @@
 // 01-shell.js — классы, атрибуты и маркеры, по которым слой узнаёт свои элементы.
-const MARKER = 'data-dsh-mobile-ui'
+const MARKER = 'data-dsh-plugin-mobile-ui'
 
 /** Класс кнопки-логотипа в шапке, которая открывает панель. */
 const BUTTON_CLASS = 'dsh-mobile-drawer-button'

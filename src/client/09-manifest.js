@@ -33,7 +33,7 @@ function installAppIcons() {
   try {
     manifestUrl = URL.createObjectURL(new Blob([manifest], { type: 'application/manifest+json' }))
   } catch (error) {
-    console.warn(`dsh-mobile-ui: could not build the app manifest: ${String(error)}`)
+    console.warn(`dsh-plugin-mobile-ui: could not build the app manifest: ${String(error)}`)
   }
 
   // Штатная ссылка на манифест: если своя не собралась, оставляем её.

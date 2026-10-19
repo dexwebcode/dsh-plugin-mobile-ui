@@ -1,13 +1,13 @@
-# dsh-mobile-ui bundle layer.
+# dsh-plugin-mobile-ui bundle layer.
 #
 # One install = mobile access to a DeepSeek Harness web profile. Both helpers are
 # VENDORED inside this package (`vendor/`), so nothing else has to be installed
 # and no other plugin is required:
-#   * `dsh-mobile-ui/relay`  — password sign-in + TLS in front of the loopback
+#   * `dsh-plugin-mobile-ui/relay`  — password sign-in + TLS in front of the loopback
 #     webserver (vendored dsh-relay host half);
-#   * `dsh-mobile-ui/tunnel` — ngrok (cloudflared as fallback) exposes the relay
+#   * `dsh-plugin-mobile-ui/tunnel` — ngrok (cloudflared as fallback) exposes the relay
 #     publicly (vendored dsh-tunnel);
-#   * `dsh-mobile-ui`        — the mobile layer over the official web UI.
+#   * `dsh-plugin-mobile-ui`        — the mobile layer over the official web UI.
 #
 # The official web app is served by the base bundle (`@deepseek-ai/dsh-web-app`);
 # nothing else in the harness is touched. Removing this bundle removes all three.
@@ -25,7 +25,7 @@
 
 - insert:
     - id: relay
-      name: 'dsh-mobile-ui/relay'
+      name: 'dsh-plugin-mobile-ui/relay'
       disabled: !!js process.env.DSH_RELAY_DISABLE === '1'
       config:
         bind: !!js process.env.DSH_RELAY_BIND ?? '0.0.0.0'
@@ -48,13 +48,13 @@
           addressGrantTtlMs: 86400000
           plainPort: 0
     - id: tunnel
-      name: 'dsh-mobile-ui/tunnel'
+      name: 'dsh-plugin-mobile-ui/tunnel'
       config:
         provider: !!js process.env.DSH_TUNNEL_PROVIDER ?? 'ngrok'
         target: 'https://127.0.0.1:3443'
         updateRelayHostnames: false
     - id: mobile-ui
-      name: 'dsh-mobile-ui'
+      name: 'dsh-plugin-mobile-ui'
       config:
         # Откуда host-половина берёт то, что показывает в настройках: ссылку
         # пишет вшитый туннель, признак пароля хранит вшитый relay.

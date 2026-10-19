@@ -30,5 +30,5 @@ export function installPasswordRoute(ctx, config) {
       }
       sendJson(res, 200, await changePassword(config.relayPort, body.password, body.confirm))
     },
-  }), 'dsh-mobile-ui: password route')
+  }), 'dsh-plugin-mobile-ui: password route')
 }

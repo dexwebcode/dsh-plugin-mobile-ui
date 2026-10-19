@@ -14,7 +14,7 @@ const EXPLORER_SELECTOR = '[aria-label="Open in File Explorer"]'
 const RELAY_LINK_ID = 'dsh-relay-link'
 
 /** Метка на пункте меню, который добавил этот слой. */
-const MENU_ITEM_ATTR = 'data-dsh-mobile-ui-menu-item'
+const MENU_ITEM_ATTR = 'data-dsh-plugin-mobile-ui-menu-item'
 
 /** Виден ли элемент: свёрнутая панель и закрытые меню дают нулевой прямоугольник. */
 function isVisible(element) {

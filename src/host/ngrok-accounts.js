@@ -183,7 +183,7 @@ export function writeActiveIndex(index) {
   try {
     writeFileSync(join(dshHome(), STATE_FILE), `${JSON.stringify({ active: index }, null, 2)}\n`, 'utf8')
   } catch (error) {
-    console.warn(`dsh-mobile-ui: could not save the ngrok account index: ${String(error)}`)
+    console.warn(`dsh-plugin-mobile-ui: could not save the ngrok account index: ${String(error)}`)
   }
 }
 
@@ -207,7 +207,7 @@ export function switchAccount(config, index) {
   writeActiveIndex(target)
   process.env.NGROK_AUTHTOKEN = tokens[target]
   void restartTunnel().catch((error) => {
-    console.warn(`dsh-mobile-ui: could not restart the tunnel after switching accounts: ${String(error)}`)
+    console.warn(`dsh-plugin-mobile-ui: could not restart the tunnel after switching accounts: ${String(error)}`)
   })
   return { ok: true, index: target }
 }
@@ -342,7 +342,7 @@ export function installAccountRotation(ctx, config) {
       if (disposed || !isLimitPage(body)) return
 
       if (exhausted >= tokens.length) {
-        console.warn('dsh-mobile-ui: все ngrok-аккаунты упёрлись в лимит трафика; ждём обновления квоты')
+        console.warn('dsh-plugin-mobile-ui: все ngrok-аккаунты упёрлись в лимит трафика; ждём обновления квоты')
         nextCheckAt = Date.now() + 30 * 60 * 1000
         return
       }
@@ -352,10 +352,10 @@ export function installAccountRotation(ctx, config) {
       process.env.NGROK_AUTHTOKEN = tokens[index]
       nextCheckAt = Date.now() + AFTER_SWITCH_MS
       exhausted += 1
-      console.warn(`dsh-mobile-ui: ngrok limit reached; switching to account ${String(index + 1)}/${String(tokens.length)}`)
+      console.warn(`dsh-plugin-mobile-ui: ngrok limit reached; switching to account ${String(index + 1)}/${String(tokens.length)}`)
 
       const restarted = await restartTunnel()
-      if (!restarted) console.warn('dsh-mobile-ui: could not restart the tunnel after switching accounts')
+      if (!restarted) console.warn('dsh-plugin-mobile-ui: could not restart the tunnel after switching accounts')
     }
 
     const timer = setInterval(() => { void check() }, PROBE_INTERVAL_MS)
@@ -368,5 +368,5 @@ export function installAccountRotation(ctx, config) {
       disposed = true
       clearInterval(timer)
     }
-  }, 'dsh-mobile-ui: ngrok accounts')
+  }, 'dsh-plugin-mobile-ui: ngrok accounts')
 }

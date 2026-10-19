@@ -31,7 +31,7 @@ const SRC = join(ROOT, 'src')
 const LIB = join(ROOT, 'lib')
 
 /** Обёртка загрузчика модулей harness: ровно то, что ждёт браузерная половина. */
-const LOADER_ID = 'dsh-mobile-ui'
+const LOADER_ID = 'dsh-plugin-mobile-ui'
 
 /**
  * Собрать пути всех `.js` в каталоге, включая подпапки.

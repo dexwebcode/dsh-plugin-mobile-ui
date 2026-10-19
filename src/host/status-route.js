@@ -50,7 +50,7 @@ export function installStatusRoute(ctx, config) {
     kind: 'exact',
     path: STATUS_PATH,
     handler: (req, res) => { sendJson(res, 200, collectStatus(config)) },
-  }), 'dsh-mobile-ui: tunnel status route')
+  }), 'dsh-plugin-mobile-ui: tunnel status route')
 
   // Ручное переключение аккаунта: браузер присылает номер в пуле.
   ctx.effect(() => ctx.webServer.register({
@@ -69,5 +69,5 @@ export function installStatusRoute(ctx, config) {
       const result = switchAccount(config, body.index)
       sendJson(res, result.ok ? 200 : 400, result)
     },
-  }), 'dsh-mobile-ui: account switch route')
+  }), 'dsh-plugin-mobile-ui: account switch route')
 }

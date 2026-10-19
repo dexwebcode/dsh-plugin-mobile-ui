@@ -50,5 +50,5 @@ export function installPairRoutes(ctx, config) {
       offNewCode()
       offInvitation()
     }
-  }, 'dsh-mobile-ui: pairing routes')
+  }, 'dsh-plugin-mobile-ui: pairing routes')
 }

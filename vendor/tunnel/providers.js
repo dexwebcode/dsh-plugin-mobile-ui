@@ -18,7 +18,7 @@ export function originHost(target) {
  * Провайдеры туннеля. У каждого — свой управляющий HTTP-порт, по которому
  * видно, что агент жив, и откуда берётся публичный адрес.
  *
- * ПРАВКА ВЕНДОРА (dsh-mobile-ui): обе ветки подставляют в Host заголовок
+ * ПРАВКА ВЕНДОРА (dsh-plugin-mobile-ui): обе ветки подставляют в Host заголовок
  * loopback-имя цели (`--http-host-header` у cloudflared, `--host-header` у
  * ngrok). Зачем: relay отвечает только тем authority, что перечислены в его
  * `bind`/`publicHostnames`/`trustedHosts`, а loopback-имена он принимает всегда.

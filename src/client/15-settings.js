@@ -38,7 +38,7 @@ const PASSWORD_MIN_LENGTH = 10
 const SECTION_CLASS = 'dsh-mobile-token'
 
 /** Атрибут-маркер своего блока стилей. */
-const STYLE_ATTR = 'data-dsh-mobile-ui-settings'
+const STYLE_ATTR = 'data-dsh-plugin-mobile-ui-settings'
 
 /** Локальный адрес, с которого настройки вообще сохраняются. */
 const LOOPBACK_URL = 'http://127.0.0.1:3080'
@@ -1110,6 +1110,6 @@ function installSettingsSection(ctx) {
       inject: () => ({ form }),
     }, MobileTokenSection))
   } catch (error) {
-    console.warn(`dsh-mobile-ui: could not register the settings section: ${String(error)}`)
+    console.warn(`dsh-plugin-mobile-ui: could not register the settings section: ${String(error)}`)
   }
 }
