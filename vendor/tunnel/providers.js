@@ -53,9 +53,16 @@ export const PROVIDERS = {
     defaultControlPort: 4040,
     controlPath: '/api/tunnels',
     args: (options) => {
+      // --host-header намеренно не передаётся: с ним relay видит Host: 127.0.0.1,
+      // а браузер присылает Origin: https://<публичное имя>, и checkFence()
+      // отклоняет модульные скрипты как "origin-mismatch" — страница на телефоне
+      // не грузится. Настоящий Host разрешён через publicHostnames.
       const args = ['http', options.target, '--log=stdout']
-      const host = originHost(options.target)
-      if (host !== undefined) args.push(`--host-header=${host}`)
+      // authtoken передаём флагом: env NGROK_AUTHTOKEN этот ngrok не применяет,
+      // если токен уже есть в глобальном конфиге, и агент поднимается на старом
+      // аккаунте (у него кончился трафик — ERR_NGROK_725).
+      const token = process.env.NGROK_AUTHTOKEN ?? ''
+      if (token !== '') args.push('--authtoken', token)
       return args
     },
     publicUrl: (body) => {

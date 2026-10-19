@@ -38,7 +38,7 @@ function refuse(req, res, message) {
 */
 async function renderQr(context, code) {
 	const payload = pairingPayload({
-		url: context.origin,
+		url: context.qrOrigin ?? context.origin,
 		plainUrl: context.plainOrigin,
 		fingerprint: context.fingerprint,
 		code
@@ -205,9 +205,20 @@ async function handleRelayRoute(req, res, url, context) {
 			expiresAt: invitation.expiresAt,
 			expiresInSeconds: Math.max(0, Math.round((invitation.expiresAt - now) / 1e3)),
 			qrSvg: await renderQr(context, invitation),
-			url: context.origin,
+			url: context.qrOrigin ?? context.origin,
 			...context.plainOrigin === void 0 ? {} : { plainUrl: context.plainOrigin },
 			...context.fingerprint === void 0 ? {} : { fingerprint: context.fingerprint }
+		});
+		return;
+	}
+	if (path === "/relay/usage.json" && method === "GET") {
+		if (!isOperator(identity)) {
+			refuse(req, res, "Usage is reported on the machine running the harness.");
+			return;
+		}
+		sendJson(res, 200, {
+			bytes: USAGE_BYTES,
+			since: USAGE_SINCE
 		});
 		return;
 	}
@@ -218,7 +229,7 @@ async function handleRelayRoute(req, res, url, context) {
 				qrSvg: await renderQr(context, code),
 				code: code.code,
 				expiresInSeconds: Math.max(0, Math.round((code.expiresAt - now) / 1e3)),
-				url: context.origin,
+				url: context.qrOrigin ?? context.origin,
 				plainUrl: context.plainOrigin,
 				fingerprint: context.fingerprint
 			}));
@@ -302,7 +313,7 @@ async function handleRelayRoute(req, res, url, context) {
 			tlsMode: config.tls,
 			hasPassword: auth.hasPassword,
 			fingerprint: context.fingerprint,
-			url: context.origin,
+			url: context.qrOrigin ?? context.origin,
 			plainUrl: context.plainOrigin
 		}));
 		return;

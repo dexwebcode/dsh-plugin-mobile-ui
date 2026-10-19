@@ -19,7 +19,60 @@ import QRCode from "qrcode";
 import { createServer, request } from "node:http";
 import { createServer as createServer$1 } from "node:https";
 import { chmod, mkdir, readFile, rename, writeFile } from "node:fs/promises";
+import { brotliCompress, constants as zlibConstants, gunzip } from "node:zlib";
 
+// 00-usage.js — счётчик исходящего трафика relay.
+//
+// ПРАВКА ВЕНДОРА (локально). Зачем: у бесплатного ngrok 1 ГБ исходящего трафика
+// в месяц, и упереться в него можно молча — ngrok просто перестаёт отдавать
+// страницу (ERR_NGROK_725), а агент при этом жив. Relay видит ровно тот трафик,
+// который потом уходит в туннель, поэтому считаем здесь: каждый байт,
+// записанный клиенту, плюс кадры websocket. Счётчик живёт в памяти процесса и
+// начинается заново вместе с relay; накопительную статистику по месяцам ведёт
+// host-половина плагина (`src/host/usage.js`).
+var USAGE_BYTES = 0;
+var USAGE_SINCE = Date.now();
+/**
+* Учесть отправленные клиенту байты.
+* @param size - byte length of the chunk.
+*/
+function usageAdd(size) {
+	if (Number.isFinite(size) && size > 0) USAGE_BYTES += size;
+}
+/**
+* Считать байты, которые обработчик пишет в ответ.
+*
+* Оборачиваем `write`/`end`, а не `writeHead`: заголовки в лимит ngrok не идут,
+* а тело — идёт целиком.
+* @param res - the response to instrument.
+* @returns the same response.
+*/
+function usageCountResponse(res) {
+	const write = res.write.bind(res);
+	const end = res.end.bind(res);
+	res.write = (chunk, ...rest) => {
+		if (chunk !== void 0 && chunk !== null && typeof chunk !== "function") usageAdd(Buffer.byteLength(chunk));
+		return write(chunk, ...rest);
+	};
+	res.end = (chunk, ...rest) => {
+		if (chunk !== void 0 && chunk !== null && typeof chunk !== "function") usageAdd(Buffer.byteLength(chunk));
+		return end(chunk, ...rest);
+	};
+	return res;
+}
+/**
+* Считать байты, которые уходят в websocket.
+* @param socket - the client-side socket.
+* @returns the same socket.
+*/
+function usageCountSocket(socket) {
+	const write = socket.write.bind(socket);
+	socket.write = (chunk, ...rest) => {
+		if (chunk !== void 0 && chunk !== null && typeof chunk !== "function") usageAdd(Buffer.byteLength(chunk));
+		return write(chunk, ...rest);
+	};
+	return socket;
+}
 //#region lib/types/fence.js
 // 01-fence.js — кому relay вообще отвечает: проверка authority и Host.
 /**
@@ -2246,7 +2299,7 @@ function refuse(req, res, message) {
 */
 async function renderQr(context, code) {
 	const payload = pairingPayload({
-		url: context.origin,
+		url: context.qrOrigin ?? context.origin,
 		plainUrl: context.plainOrigin,
 		fingerprint: context.fingerprint,
 		code
@@ -2413,9 +2466,20 @@ async function handleRelayRoute(req, res, url, context) {
 			expiresAt: invitation.expiresAt,
 			expiresInSeconds: Math.max(0, Math.round((invitation.expiresAt - now) / 1e3)),
 			qrSvg: await renderQr(context, invitation),
-			url: context.origin,
+			url: context.qrOrigin ?? context.origin,
 			...context.plainOrigin === void 0 ? {} : { plainUrl: context.plainOrigin },
 			...context.fingerprint === void 0 ? {} : { fingerprint: context.fingerprint }
+		});
+		return;
+	}
+	if (path === "/relay/usage.json" && method === "GET") {
+		if (!isOperator(identity)) {
+			refuse(req, res, "Usage is reported on the machine running the harness.");
+			return;
+		}
+		sendJson(res, 200, {
+			bytes: USAGE_BYTES,
+			since: USAGE_SINCE
 		});
 		return;
 	}
@@ -2426,7 +2490,7 @@ async function handleRelayRoute(req, res, url, context) {
 				qrSvg: await renderQr(context, code),
 				code: code.code,
 				expiresInSeconds: Math.max(0, Math.round((code.expiresAt - now) / 1e3)),
-				url: context.origin,
+				url: context.qrOrigin ?? context.origin,
 				plainUrl: context.plainOrigin,
 				fingerprint: context.fingerprint
 			}));
@@ -2510,7 +2574,7 @@ async function handleRelayRoute(req, res, url, context) {
 			tlsMode: config.tls,
 			hasPassword: auth.hasPassword,
 			fingerprint: context.fingerprint,
-			url: context.origin,
+			url: context.qrOrigin ?? context.origin,
 			plainUrl: context.plainOrigin
 		}));
 		return;
@@ -2557,7 +2621,7 @@ async function handleRelayRoute(req, res, url, context) {
 }
 
 //#endregion
-//#region lib/types/secure-context.js
+﻿//#region lib/types/secure-context.js
 // 12-secure-context.js — подмена secure context для старых браузеров.
 /**
 * A UUID for a page the browser refuses to call secure.
@@ -2641,6 +2705,129 @@ function injectSecureContextShim(html) {
 	if (open === null) return html;
 	const at = open.index + open[0].length;
 	return `${html.slice(0, at)}${MARKUP}${html.slice(at)}`;
+}
+
+//#endregion
+//#region lib/types/service-worker.js
+// 12b-service-worker.js — кэш оболочки и ассетов, переживающий очистку HTTP-кэша.
+//
+// ПРАВКА ВЕНДОРА (локально). Зачем: страница тянет ~350 КБ (brotli) ассетов и
+// ещё раз запрашивает оболочку при каждой перезагрузке; мобильные браузеры к
+// тому же вычищают HTTP-кэш за неделю — телефон качает всё заново, выжигая
+// лимит ngrok.
+//
+// Что делает воркер:
+//   * при установке скачивает оболочку и все ассеты, на которые она ссылается,
+//     в Cache Storage — дальше они доступны, даже если HTTP-кэш очищен;
+//   * навигацию (саму страницу) отдаёт из кэша сразу, а свежую версию тянет
+//     фоном и кладёт на следующий раз: перезагрузка перестаёт быть «скачать всё»;
+//   * /assets/* отдаёт из кэша, в сеть идёт только за новыми (новый хэш в имени).
+//
+// Данные не кэшируются: API, websocket и чужие origin идут мимо воркера, поэтому
+// устаревших сессий или ответов модели быть не может.
+var SERVICE_WORKER_PATH = "/dsh-mobile-sw.js";
+var SERVICE_WORKER_MARKER = "dsh-mobile-sw";
+var SERVICE_WORKER_SOURCE = `/* dsh-relay: кэш оболочки и ассетов. */
+const CACHE = "dsh-mobile-shell-v3";
+const SHELL = "/";
+/** Скачать оболочку и все ассеты, на которые она ссылается. */
+async function precache() {
+	const cache = await caches.open(CACHE);
+	const response = await fetch(SHELL, { cache: "no-store" });
+	if (!response.ok) return;
+	const html = await response.clone().text();
+	await cache.put(SHELL, response);
+	const assets = new Set();
+	const pattern = /(?:src|href)="([^"]*\\/assets\\/[^"]+)"/g;
+	let match = pattern.exec(html);
+	while (match !== null) {
+		assets.add(match[1]);
+		match = pattern.exec(html);
+	}
+	await Promise.all([...assets].map(async (url) => {
+		try {
+			const asset = await fetch(url);
+			if (asset.ok) await cache.put(url, asset);
+		} catch {
+			/* один недоступный ассет не должен срывать установку */
+		}
+	}));
+}
+self.addEventListener("install", (event) => {
+	event.waitUntil(precache().catch(() => {}).then(() => self.skipWaiting()));
+});
+self.addEventListener("activate", (event) => {
+	event.waitUntil((async () => {
+		// Кэши прошлых версий удаляем: имена файлов сменились вместе со сборкой.
+		const names = await caches.keys();
+		await Promise.all(names.filter((name) => name !== CACHE).map((name) => caches.delete(name)));
+		await self.clients.claim();
+	})());
+});
+/** Отдать из кэша, иначе сходить в сеть и запомнить. */
+async function cacheFirst(request, key) {
+	const cache = await caches.open(CACHE);
+	const hit = await cache.match(key ?? request);
+	if (hit !== undefined) return hit;
+	const response = await fetch(request);
+	if (response.ok) await cache.put(key ?? request, response.clone());
+	return response;
+}
+/** Оболочку берём из сети, кэш — только когда сети нет. */
+async function networkFirstShell(request) {
+	const cache = await caches.open(CACHE);
+	try {
+		const response = await fetch(request);
+		if (response.ok) await cache.put(SHELL, response.clone());
+		return response;
+	} catch {
+		const hit = await cache.match(SHELL);
+		if (hit !== undefined) return hit;
+		return new Response("Страница недоступна без сети", { status: 503, headers: { "content-type": "text/plain; charset=utf-8" } });
+	}
+}
+self.addEventListener("fetch", (event) => {
+	const request = event.request;
+	if (request.method !== "GET") return;
+	let url;
+	try {
+		url = new URL(request.url);
+	} catch {
+		return;
+	}
+	if (url.origin !== self.location.origin) return;
+	// Оболочку всегда спрашиваем у сети: она весит единицы килобайт, зато новая
+	// сборка видна сразу. Кэш остаётся страховкой на случай, когда сети нет.
+	if (request.mode === "navigate") {
+		event.respondWith(networkFirstShell(request));
+		return;
+	}
+	if (/^\\/assets\\//.test(url.pathname)) {
+		event.respondWith(cacheFirst(request));
+	}
+});
+`;
+/** Inline registration spliced into the document head. */
+var SERVICE_WORKER_MARKUP = `<script id="${SERVICE_WORKER_MARKER}">(function(){try{
+if(!("serviceWorker" in navigator))return;
+addEventListener("load",function(){
+navigator.serviceWorker.register("${SERVICE_WORKER_PATH}",{scope:"/"}).catch(function(){});
+});
+}catch(e){}})()<\/script>`;
+/**
+* Add the service worker registration to one index document.
+*
+* Idempotent like the secure-context shim: the marker attribute is the guard
+* against a double injection after a client-side navigation.
+* @param html - the index document as the frontend server rendered it.
+* @returns the document with the registration, or unchanged.
+*/
+function injectServiceWorker(html) {
+	if (html.includes(SERVICE_WORKER_MARKER)) return html;
+	const open = /<head(?:\s[^>]*)?>/i.exec(html) ?? /<body(?:\s[^>]*)?>/i.exec(html);
+	if (open === null) return html;
+	const at = open.index + open[0].length;
+	return `${html.slice(0, at)}${SERVICE_WORKER_MARKUP}${html.slice(at)}`;
 }
 
 //#endregion
@@ -2859,7 +3046,97 @@ function loopbackAuthority(target) {
 	return `${target.host}:${String(target.port)}`;
 }
 /**
+* Кэширование ответов harness.
+*
+* ПРАВКА ВЕНДОРА (локально): harness не отдаёт `cache-control` для хэшированных
+* ассетов сборки. Браузер поэтому качал все ~470 КБ при каждом входе — это и
+* выжигало лимит ngrok. Имя файла у Vite содержит хэш содержимого, так что такие
+* ответы можно кэшировать навсегда; HTML наоборот не кэшируем, иначе телефон
+* залипнет на старой сборке.
+* @param headers - the response headers, already stripped of hop-by-hop entries.
+* @param pathname - the request path, used to recognise build assets.
+*/
+function applyCacheHeaders(headers, pathname) {
+	const hasCacheControl = Object.keys(headers).some((key) => key.toLowerCase() === "cache-control");
+	if (hasCacheControl) return;
+	if (/^\/assets\/[^/]+\.(?:js|mjs|css|woff2?|ttf|png|svg|webp|ico)$/i.test(pathname)) {
+		headers["cache-control"] = "public, max-age=31536000, immutable";
+		return;
+	}
+	if (pathname === "/" || pathname.endsWith(".html")) {
+		headers["cache-control"] = "no-cache";
+	}
+}
+/**
 * Forward one request and stream its response back.
+* @param req - the inbound request; its body is piped upstream.
+* @param res - the response to write; owned entirely by this call.
+* @param target - the loopback harness.
+* @returns resolution once the response is finished or an error was reported.
+*/
+/** Кэш brotli-вариантов ассетов: имя файла содержит хэш сборки. */
+var BROTLI_CACHE = /* @__PURE__ */ new Map();
+/** Предел числа файлов в кэше: одна сборка — это единицы ассетов. */
+var BROTLI_CACHE_MAX = 32;
+/** Слишком крупные файлы не пережимаем: brotli займёт процессор надолго. */
+var BROTLI_MAX_RAW = 8 * 1024 * 1024;
+/** Пути неизменяемых ассетов сборки. */
+var ASSET_PATH = /^\/assets\/[^/]+\.(?:js|mjs|css|woff2?|ttf|png|svg|webp|ico)$/i;
+var brotliAsync = promisify(brotliCompress);
+var gunzipAsync = promisify(gunzip);
+/**
+* Значение заголовка без учёта регистра.
+* @param headers - the header map.
+* @param name - lowercase header name.
+* @returns the value, or undefined.
+*/
+function headerValue(headers, name) {
+	for (const [key, value] of Object.entries(headers)) if (key.toLowerCase() === name) return value;
+	return void 0;
+}
+/**
+* Поставить заголовок, убрав прежний в любом регистре.
+*
+* Иначе Node отправит два `Content-Length` — и браузер отбросит ответ.
+* @param headers - the header map, mutated in place.
+* @param name - lowercase header name.
+* @param value - the value to set.
+*/
+function setHeader(headers, name, value) {
+	for (const key of Object.keys(headers)) if (key.toLowerCase() === name) delete headers[key];
+	headers[name] = value;
+}
+/**
+* Клиент принимает brotli.
+* @param value - the `accept-encoding` request header.
+* @returns true when `br` is among the accepted codings.
+*/
+function acceptsBrotli(value) {
+	return typeof value === "string" && /(?:^|,)\s*br\s*(?:;|,|$)/i.test(value);
+}
+/**
+* Отдать готовый brotli-вариант из памяти, не трогая harness.
+* @param res - the response to write.
+* @param entry - the cached body and its content type.
+*/
+function sendBrotli(res, entry) {
+	res.writeHead(200, {
+		"content-type": entry.type,
+		"content-encoding": "br",
+		"content-length": String(entry.body.length),
+		"cache-control": "public, max-age=31536000, immutable",
+		vary: "accept-encoding"
+	});
+	res.end(entry.body);
+}
+/**
+* Forward one request and stream its response back.
+*
+* ПРАВКА ВЕНДОРА (локально): harness умеет только gzip, а brotli на этих
+* бандлах даёт ещё −15% (замер: 404 КБ gzip против 342 КБ brotli). Поэтому
+* ассет, который клиент умеет принимать сжатым brotli, relay пережимает сам и
+* держит результат в памяти: имя файла содержит хэш сборки, так что кэш не
+* протухает, а повторные запросы вообще не доходят до harness.
 * @param req - the inbound request; its body is piped upstream.
 * @param res - the response to write; owned entirely by this call.
 * @param target - the loopback harness.
@@ -2867,6 +3144,14 @@ function loopbackAuthority(target) {
 */
 function forward(req, res, target) {
 	return new Promise((resolve$1) => {
+		const pathname = (req.url ?? "/").split("?")[0];
+		const wantsBrotli = acceptsBrotli(headerValue(req.headers, "accept-encoding"));
+		const cached = BROTLI_CACHE.get(pathname);
+		if (wantsBrotli && cached !== void 0) {
+			sendBrotli(res, cached);
+			resolve$1();
+			return;
+		}
 		const upstream = request({
 			host: target.host,
 			port: target.port,
@@ -2889,16 +3174,61 @@ function forward(req, res, target) {
 			fail(502, "upstream unavailable");
 		});
 		upstream.on("response", (upstreamRes) => {
-			res.writeHead(upstreamRes.statusCode ?? 502, downstreamHeaders(upstreamRes.headers));
-			upstreamRes.pipe(res);
+			const headers = downstreamHeaders(upstreamRes.headers);
+			applyCacheHeaders(headers, pathname);
+			const status = upstreamRes.statusCode ?? 502;
+			if (!wantsBrotli || status !== 200 || !ASSET_PATH.test(pathname)) {
+				res.writeHead(status, headers);
+				upstreamRes.pipe(res);
+				upstreamRes.on("error", () => {
+					res.destroy();
+				});
+				res.on("close", () => {
+					upstreamRes.destroy();
+				});
+				upstreamRes.on("end", () => {
+					resolve$1();
+				});
+				return;
+			}
+			const chunks = [];
+			upstreamRes.on("data", (chunk) => {
+				chunks.push(chunk);
+			});
 			upstreamRes.on("error", () => {
 				res.destroy();
-			});
-			res.on("close", () => {
-				upstreamRes.destroy();
+				resolve$1();
 			});
 			upstreamRes.on("end", () => {
-				resolve$1();
+				void (async () => {
+					const body = Buffer.concat(chunks);
+					try {
+						const encoding = String(headerValue(headers, "content-encoding") ?? "").toLowerCase();
+						const raw = encoding === "gzip" ? await gunzipAsync(body) : body;
+						if (raw.length > BROTLI_MAX_RAW) throw new Error("asset too large to recompress");
+						const compressed = await brotliAsync(raw, { params: { [zlibConstants.BROTLI_PARAM_QUALITY]: 11 } });
+						const type = String(headerValue(headers, "content-type") ?? "application/octet-stream");
+						if (BROTLI_CACHE.size >= BROTLI_CACHE_MAX) {
+							const oldest = BROTLI_CACHE.keys().next().value;
+							BROTLI_CACHE.delete(oldest);
+						}
+						BROTLI_CACHE.set(pathname, { body: compressed, type });
+						if (!res.destroyed) {
+							setHeader(headers, "content-encoding", "br");
+							setHeader(headers, "content-length", String(compressed.length));
+							setHeader(headers, "vary", "accept-encoding");
+							res.writeHead(status, headers);
+							res.end(compressed);
+						}
+					} catch {
+						// fail-soft: отдаём исходный ответ, лишь бы страница открылась.
+						if (!res.destroyed) {
+							res.writeHead(status, headers);
+							res.end(body);
+						}
+					}
+					resolve$1();
+				})();
 			});
 		});
 		req.on("error", () => {
@@ -3014,6 +3344,8 @@ function forwardUpgrade(req, socket, head, target, ledger) {
 		});
 		if (upstreamHead.length > 0) socket.write(upstreamHead);
 		if (head.length > 0) upstreamSocket.write(head);
+		// Считаем кадры, уходящие клиенту: чат и есть основной трафик.
+		usageCountSocket(socket);
 		upstreamSocket.pipe(socket);
 		socket.pipe(upstreamSocket);
 	});
@@ -3086,6 +3418,27 @@ function originOf(req, secure) {
 	return `${secure ? "https" : "http"}://${host}`;
 }
 /**
+ * The origin a pairing invitation should advertise.
+ *
+ * ПРАВКА ВЕНДОРА (локально): мост `/mobile-ui/pair` спрашивает relay по
+ * loopback, поэтому `originOf` возвращал `https://127.0.0.1:3443` — и QR на
+ * компьютере вёл на адрес самого телефона. Если запрос пришёл на loopback-имя,
+ * а публичное имя известно (`publicHostnames`), в приглашение попадает оно.
+ * @param req - the inbound request, read for the host it addressed.
+ * @param secure - whether this listener speaks TLS.
+ * @param publicHostnames - names the deployment is reached by from outside.
+ * @returns the origin to put into the QR and the invitation.
+ */
+function qrOriginOf(req, secure, publicHostnames) {
+	const host = typeof req.headers.host === "string" ? req.headers.host : "localhost";
+	const hostname = host.replace(/:\d+$/, "").replace(/^\[/, "").replace(/\]$/, "");
+	const loopback = hostname === "localhost" || hostname === "::1" || /^127\./.test(hostname);
+	if (loopback && Array.isArray(publicHostnames) && publicHostnames.length > 0) {
+		return `https://${publicHostnames[0]}`;
+	}
+	return `${secure ? "https" : "http"}://${host}`;
+}
+/**
 * The plain listener's origin, as this client would reach it.
 * @param req - the inbound request, read for the host it addressed.
 * @param plainPort - the compatibility listener's port, when one is running.
@@ -3106,6 +3459,8 @@ function plainOriginOf(req, plainPort) {
 */
 async function serve(req, res, runtime, policy, authorities) {
 	const now = Date.now();
+	// Считаем исходящий трафик: всё, что уйдёт клиенту, попадёт в лимит ngrok.
+	usageCountResponse(res);
 	const address = normalizeAddress(req.socket.remoteAddress);
 	const local = isLoopbackHostname(address === "" ? "x" : address);
 	if ((!local || isForwarded(req.headers)) && runtime.auth.exceedsRate(address, now)) {
@@ -3137,6 +3492,17 @@ async function serve(req, res, runtime, policy, authorities) {
 		return;
 	}
 	const identity = classify(runtime.auth, req, address, local, policy, now);
+	// Service worker отдаём сами: браузер запрашивает его без страницы, и он
+	// должен быть доступен до входа. Файл статический и ничего не раскрывает.
+	if (url.pathname === SERVICE_WORKER_PATH && (req.method === "GET" || req.method === "HEAD")) {
+		res.writeHead(200, {
+			"content-type": "application/javascript; charset=utf-8",
+			"cache-control": "no-cache",
+			"service-worker-allowed": "/"
+		});
+		res.end(req.method === "HEAD" ? void 0 : SERVICE_WORKER_SOURCE);
+		return;
+	}
 	if (url.pathname === RELAY_PREFIX || url.pathname.startsWith(`${RELAY_PREFIX}/`)) {
 		if (!policy.servesRelayRoutes && url.pathname !== "/relay/health") {
 			res.writeHead(404, { "content-type": "text/plain; charset=utf-8" });
@@ -3149,6 +3515,7 @@ async function serve(req, res, runtime, policy, authorities) {
 			identity,
 			address,
 			origin: originOf(req, policy.secure),
+		qrOrigin: qrOriginOf(req, policy.secure, runtime.config.publicHostnames),
 			plainOrigin: plainOriginOf(req, runtime.plainPort),
 			fingerprint: runtime.fingerprint,
 			secure: policy.secure,
@@ -3770,6 +4137,9 @@ async function start(ctx, config, log) {
 	});
 	const untap = config.uiLink ? ctx.webServer.tapIndex(injectRelayLink) : () => void 0;
 	const untapShim = ctx.webServer.tapIndex(injectSecureContextShim);
+	// Регистрация service worker: кэш ассетов переживает очистку HTTP-кэша
+	// браузером, поэтому повторный вход на телефоне не тянет 470 КБ заново.
+	const untapServiceWorker = ctx.webServer.tapIndex(injectServiceWorker);
 	const reachable = ["127.0.0.1", ...localAddresses()].map((address) => `${scheme}://${address}:${String(primary.port)}`).join(" ");
 	log.info(`listening on ${reachable} (harness on 127.0.0.1:${String(ctx.webServer.port)})`);
 	if (material === void 0) log.warn("serving plaintext: anything on the network path can read this traffic and the credentials on it");
@@ -3786,6 +4156,7 @@ async function start(ctx, config, log) {
 	}) : async () => void 0;
 	return { stop: async () => {
 		clearInterval(poll);
+		untapServiceWorker();
 		untapShim();
 		untap();
 		unroute();

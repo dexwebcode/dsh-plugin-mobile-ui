@@ -12,9 +12,11 @@
 // этим файлам не идёт.
 import Schema from '@deepseek-ai/schemastery'
 import { installNgrokToken } from './ngrok-token.js'
+import { installAccountRotation } from './ngrok-accounts.js'
 import { installPairRoutes } from './pair-route.js'
 import { installPasswordRoute } from './password-route.js'
 import { installStatusRoute } from './status-route.js'
+import { installUsage } from './usage.js'
 
 /** Имя плагина в композиции профиля. */
 export const name = 'mobile-ui'
@@ -30,8 +32,21 @@ export const inject = ['webServer']
  * правится прямо в диалоге настроек, а не правкой файлов профиля.
  */
 export const Config = Schema.object({
-  /** authtoken ngrok: без него ngrok не поднимает публичный туннель. */
+  /**
+   * authtoken ngrok: без него ngrok не поднимает публичный туннель.
+   *
+   * Можно вписать несколько токенов через запятую — это пул аккаунтов. Когда у
+   * активного кончается трафик (ERR_NGROK_725), плагин переключается на
+   * следующий, см. `./ngrok-accounts.js`.
+   */
   ngrokAuthtoken: Schema.string().default('').volatile(),
+  /**
+   * Подписи к токенам в том же порядке, через запятую.
+   *
+   * Только для человека: по ним в настройках и в списке ссылок видно, какой
+   * аккаунт какой. Пустое место даёт «Аккаунт N».
+   */
+  ngrokAuthtokenNames: Schema.string().default('').volatile(),
   /** Файл, куда вшитый туннель пишет выданную ссылку. */
   tunnelUrlFile: Schema.string().default(''),
   /** Файл состояния вшитого relay: по нему видно, задан ли пароль. */
@@ -40,6 +55,13 @@ export const Config = Schema.object({
   relayPort: Schema.number().default(3443),
   /** Имя провайдера туннеля: показывается в настройках как есть. */
   tunnelProvider: Schema.string().default('ngrok'),
+  /**
+   * Месячный лимит трафика одного ngrok-аккаунта в байтах.
+   *
+   * По нему считается остаток и рисуется полоса расхода в шапке панели.
+   * По умолчанию 1 ГиБ — квота бесплатного плана; на Hobbyist поставь 5 ГиБ.
+   */
+  ngrokMonthlyLimitBytes: Schema.number().default(1024 * 1024 * 1024),
 })
 
 /**
@@ -49,6 +71,8 @@ export const Config = Schema.object({
  */
 export function apply(ctx, config) {
   installNgrokToken(ctx, config)
+  installAccountRotation(ctx, config)
+  installUsage(ctx, config)
   installStatusRoute(ctx, config)
   installPairRoutes(ctx, config)
   installPasswordRoute(ctx, config)

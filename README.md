@@ -58,7 +58,7 @@ DeepSeek Harness работает локально на вашем компью�
 
 - **Публичный доступ без инфраструктуры.** Публичная HTTPS-ссылка создаётся автоматически, без домена и VPS.
 - **Защита паролем.** Всё, что за ссылкой, требует заданный вами пароль (минимум 10 символов).
-- **Подключение телефона по QR-коду.** Одноразовый 8-значный код (и QR, в который он зашит) подключает телефон; код действует 10 секунд.
+- **Подключение телефона по QR-коду.** Одноразовый 8-значный код (и QR, в который он зашит) подключает телефон; код действует сутки, а QR ведёт на публичный адрес ngrok.
 - **Мобильный веб-интерфейс.** На узких экранах слой добавляет:
   - выдвижную панель со списком чатов, открываемую кнопкой в шапке;
   - кнопку «новый чат» в шапке;
@@ -67,7 +67,12 @@ DeepSeek Harness работает локально на вашем компью�
   - кнопку «вниз, к последнему сообщению», закреплённую над полем ввода;
   - обработку клавиатуры/видимой области и standalone-манифест PWA с иконками.
 - **Без влияния на десктоп.** Мобильный слой включается только на узких экранах (≤1023 px); десктоп остаётся штатным.
-- **Всё настраивается из интерфейса.** Токен ngrok, публичная ссылка, код подключения и пароль задаются в настройках, а не правкой файлов.
+- **Всё настраивается из интерфейса.** Токены ngrok, публичная ссылка, код подключения и пароль задаются в настройках, а не правкой файлов.
+- **Несколько ngrok-аккаунтов.** Токены добавляются строками с именами: плагин помнит активный и сам переключается на следующий, когда у текущего кончается месячный трафик (`ERR_NGROK_725`). Переключить можно и вручную — тапом по строке в «Ссылки по аккаунтам»; активная строка обведена зелёным.
+- **Счётчик трафика.** Расход виден полосой под логотипом в меню (зелёная → оранжевая → красная) и карточкой «Трафик ngrok» в настройках. Значение можно поправить вручную по кабинету ngrok — счётчик продолжит расти от него.
+- **Меньше трафика.** Ассеты кэшируются `immutable`, relay пережимает их brotli (−15% к gzip), а service worker держит оболочку и ассеты в своём хранилище: повторный вход стоит около 7 КБ вместо 350.
+- **Подсказка про VPN.** Если интерфейс не догрузился за 12 секунд или сетевой запрос упал, появляется объяснение: из РФ DeepSeek доступен только через VPN.
+- **Раздел Mobile UI идёт первым** в навигации настроек.
 
 ### Требования
 
@@ -97,7 +102,7 @@ DeepSeek Harness работает локально на вашем компью�
 
 3. Откройте локальный веб-интерфейс и перейдите в **Настройки → Mobile UI**.
 
-4. Вставьте authtoken ngrok в поле **Токен ngrok** и нажмите **Сохранить**. Токен бесплатный, берётся в [кабинете ngrok](https://dashboard.ngrok.com/get-started/your-authtoken).
+4. Вставьте authtoken ngrok в поле **Токен ngrok** и нажмите **Сохранить**. Токен бесплатный, берётся в [кабинете ngrok](https://dashboard.ngrok.com/get-started/your-authtoken). Аккаунтов можно добавить несколько: слева имя, справа токен, кнопка **+ Добавить токен** добавляет строку.
 
 5. Подождите несколько секунд, пока в карточке **Туннель** не появится публичная ссылка (она появляется после подъёма туннеля).
 
@@ -133,7 +138,7 @@ npm pack
 Получится `dsh-mobile-ui-<версия>.tgz`. Установите его с полным путём:
 
 ```bash
-dsh plugin add "C:\путь\к\dsh-mobile-ui-3.5.7.tgz"
+dsh plugin add "C:\путь\к\dsh-mobile-ui-3.6.0.tgz"
 ```
 
 #### Вариант C — менеджер плагинов в веб-интерфейсе
@@ -145,7 +150,7 @@ dsh plugin add "C:\путь\к\dsh-mobile-ui-3.5.7.tgz"
 
 #### Проверка установки
 
-После установки и запуска `dsh web` откройте **Настройки**. Должен появиться раздел **Mobile UI** (а также **Сервер**). Если раздела нет — плагин не загрузился в запущенный профиль: проверьте имя профиля и менеджер плагинов.
+После установки и запуска `dsh web` откройте **Настройки**. Должен появиться раздел **Mobile UI** — он стоит первым в списке. Если раздела нет — плагин не загрузился в запущенный профиль: проверьте имя профиля и менеджер плагинов.
 
 ### Настройка
 
@@ -153,7 +158,9 @@ dsh plugin add "C:\путь\к\dsh-mobile-ui-3.5.7.tgz"
 
 | Параметр | Описание | По умолчанию | Обязателен |
 |---|---|---|---|
-| `ngrokAuthtoken` | authtoken ngrok; синхронизируется в окружение `NGROK_AUTHTOKEN` процесса за ~2 с | пусто | Только для ngrok |
+| `ngrokAuthtoken` | Пул authtoken ngrok через запятую; активный синхронизируется в окружение `NGROK_AUTHTOKEN` процесса за ~2 с | пусто | Только для ngrok |
+| `ngrokAuthtokenNames` | Подписи к токенам в том же порядке (только для интерфейса; пустое место даёт «Аккаунт N») | пусто | Нет |
+| `ngrokMonthlyLimitBytes` | Месячный лимит трафика одного аккаунта в байтах — по нему считается остаток и рисуется полоса | `1073741824` (1 ГиБ) | Нет |
 | `DSH_RELAY_BIND` | Адрес, на котором слушает relay | `0.0.0.0` | Нет |
 | `DSH_RELAY_PORT` | Порт relay | `3443` | Нет |
 | `DSH_RELAY_TLS` | Режим TLS relay | `self-signed` | Нет |
@@ -167,6 +174,9 @@ dsh plugin add "C:\путь\к\dsh-mobile-ui-3.5.7.tgz"
 | `~/.dsh/tunnel-url.txt` | Публичная ссылка, которую пишет туннель после подъёма. |
 | `~/.dsh/relay/state.json` | Состояние relay (хранит признак заданного пароля). |
 | `~/.dsh/relay/` | Каталог состояния relay. |
+| `~/.dsh/ngrok-accounts.json` | Номер активного аккаунта в пуле (чтобы после перезапуска не возвращаться на исчерпанный). |
+| `~/.dsh/ngrok-urls.json` | Последний известный публичный адрес каждого аккаунта — по нему строится список ссылок. |
+| `~/.dsh/ngrok-usage.json` | Израсходованные байты по аккаунтам и месяцам плюс ручная поправка по кабинету. |
 | `~/.dsh/bin/` | Где туннель ищет бинарник провайдера (`ngrok`/`cloudflared`). |
 
 > [!IMPORTANT]
@@ -192,7 +202,24 @@ dsh plugin add "C:\путь\к\dsh-mobile-ui-3.5.7.tgz"
 
 #### Подключение ещё одного телефона
 
-Откройте **Настройки → Mobile UI → Подключение телефона** и отсканируйте QR или введите код вручную. Код одноразовый и обновляется каждые 10 секунд; кнопка **Новый код** выпускает новый сразу.
+Откройте **Настройки → Mobile UI → Подключение телефона** и отсканируйте QR или введите код вручную. Код одноразовый и живёт сутки; кнопка **Новый код** выпускает новый сразу. В QR зашит **публичный адрес ngrok**, поэтому сканировать его можно с любого устройства.
+
+#### Несколько ngrok-аккаунтов
+
+Бесплатный ngrok даёт **1 ГиБ трафика в месяц на аккаунт**. Плагин держит пул аккаунтов:
+
+- в каждой строке сначала **имя**, потом токен; **+ Добавить токен** добавляет строку;
+- активный аккаунт помечен **зелёной обводкой и галочкой** слева;
+- когда у активного кончается трафик (`ERR_NGROK_725`), плагин сам переключается на следующий и перезапускает агент;
+- переключить вручную — **тап по строке** в «Ссылки по аккаунтам». Значок копирования рядом копирует адрес, не переключая аккаунт;
+- у каждого аккаунта свой постоянный домен, поэтому при переключении **меняется публичный адрес** и QR.
+
+#### Трафик и лимиты
+
+- Полоса под логотипом в меню показывает **остаток**: зелёная, пока больше половины, оранжевая до 20%, красная ниже.
+- Карточка **Трафик ngrok** в настройках показывает расход, лимит и имя аккаунта; карандаш открывает ручной ввод значения из [кабинета ngrok](https://dashboard.ngrok.com/usage), после чего счётчик растёт уже от него.
+- Экономия: ассеты кэшируются навсегда, relay пережимает их brotli, service worker держит оболочку и ассеты у себя. Повторный вход с телефона стоит ~7 КБ вместо ~350 КБ.
+- Точные цифры по аккаунту всегда в кабинете: плагин не видит байты самого ngrok (страница-предупреждение, страницы ошибок) и трафик других проектов на том же аккаунте — для этого и нужна ручная поправка.
 
 #### Смена пароля
 
@@ -225,7 +252,7 @@ dsh plugin add "C:\путь\к\dsh-mobile-ui-3.5.7.tgz"
 #### Пример 3 — офлайн-установка из tarball
 
 1. В репозитории: `npm run build && npm pack`.
-2. `dsh plugin add "C:\путь\к\dsh-mobile-ui-3.5.7.tgz"`.
+2. `dsh plugin add "C:\путь\к\dsh-mobile-ui-3.6.0.tgz"`.
 3. Ожидаемый результат: плагин установлен, разделы настроек появляются после перезапуска `dsh web`.
 
 ### Решение проблем
@@ -234,6 +261,9 @@ dsh plugin add "C:\путь\к\dsh-mobile-ui-3.5.7.tgz"
 |---|---|---|
 | Публичной ссылки нет / «Токен ещё не задан…» | Нет authtoken ngrok | Задайте токен в Настройки → Mobile UI и нажмите «Сохранить». |
 | ngrok завершается с `ERR_NGROK_9040` | ngrok блокирует адреса из России | Переключитесь на Cloudflare: `DSH_TUNNEL_PROVIDER=cloudflared` и установите `cloudflared`. |
+| На телефоне `ERR_NGROK_725` | У активного аккаунта кончился месячный трафик | Плагин переключится сам, если добавлен второй токен; иначе добавьте аккаунт или дождитесь 1-го числа. |
+| «все ngrok-аккаунты упёрлись в лимит» | Исчерпаны все токены пула | Добавьте новый аккаунт ngrok; плагин проверяет лимит раз в минуту и ждёт 30 минут после неудачного круга. |
+| Полоса трафика врёт | Плагин не видит байты самого ngrok и трафик других проектов | Нажмите карандаш в карточке «Трафик ngrok» и введите значение из кабинета ngrok. |
 | «Relay не отвечает — проверьте, что он запущен.» | Relay не запущен | Убедитесь, что `dsh web` работает; проверьте порт relay (`DSH_RELAY_PORT`). |
 | Подключение возвращает `relay-unavailable` (503) | Relay недоступен из маршрута хоста | Перезапустите DSH; проверьте, что relay поднят. |
 | Пароль отклонён | Меньше 10 символов или поля не совпадают | Используйте ≥ 10 символов и совпадающие поля. |
@@ -242,7 +272,7 @@ dsh plugin add "C:\путь\к\dsh-mobile-ui-3.5.7.tgz"
 | `dsh: pnpm was not found` | Нет pnpm | Установите pnpm и добавьте в `PATH`. |
 | Плагин не обнаружен | Установлен в другой профиль | Проверьте активный профиль и менеджер плагинов. |
 | Туннель не стартует | Нет бинарника провайдера | Положите `ngrok`/`cloudflared` в `PATH` или `~/.dsh/bin/`. |
-| «Перезапуск сервера с телефона недоступен…» | Перезапуск с телефона не реализован в этой сборке | Перезапустите с компьютера или перезагрузите интерфейс. |
+| Плашка «работает только с VPN» | DeepSeek не отдал данные из РФ | Включите VPN; плашка появляется, если интерфейс не догрузился за 12 с. |
 
 ### Обновление и удаление
 
@@ -273,7 +303,7 @@ dsh plugin remove dsh-mobile-ui
 
 - Всё за публичной ссылкой закрыто **паролем** (минимум 10 символов). Задайте его до того, как поделитесь ссылкой.
 - Relay использует **самоподписанный сертификат** на петлевом интерфейсе; публичный TLS терминирует ngrok/Cloudflare, поэтому телефон общается с провайдером по HTTPS.
-- **Код подключения одноразовый** и действует 10 секунд; в QR зашиты ссылка, код и отпечаток сертификата.
+- **Код подключения одноразовый** и живёт сутки; в QR зашиты публичный адрес ngrok, код и отпечаток сертификата.
 - Relay **ограничивает частоту** входа (6000 запросов/мин), допускает 20 неудачных попыток и затем блокирует на 5 минут; сессия после входа живёт 30 дней.
 - **Настройки нельзя менять удалённо**: токен и пароль записываются только с компьютера, на котором работает DSH.
 
@@ -288,7 +318,11 @@ dsh plugin remove dsh-mobile-ui
 
 **ngrok или Cloudflare?** По умолчанию ngrok, нужен бесплатный authtoken. Cloudflare (`DSH_TUNNEL_PROVIDER=cloudflared`) — если ngrok заблокирован или аккаунт не нужен.
 
-**Почему в настройках два раздела?** Плагин добавляет **Mobile UI** (токен, ссылка, подключение, пароль) и **Сервер** (публичная ссылка, подключение, пароль, перезапуск). Основной для настройки — **Mobile UI**.
+**Сколько телефонов можно подключить?** Сколько угодно: вход по паролю, сессия живёт 30 дней, все устройства за одним туннелем.
+
+**Что будет, когда кончится трафик ngrok?** Если в пуле есть второй аккаунт, плагин сам переключится на него и перезапустит туннель; адрес и QR при этом сменятся. Если аккаунт один — ngrok покажет `ERR_NGROK_725` до 1-го числа.
+
+**Можно ли не держать телефон в фоне?** Да, сессия входа живёт 30 дней, а ассеты кэшируются — повторный вход почти ничего не качает.
 
 **Это меняет десктопный интерфейс?** Нет. Мобильный слой включается только на узких экранах (≤1023 px).
 
@@ -301,7 +335,7 @@ dsh plugin remove dsh-mobile-ui
 - **Node.js:** `^22.19.0 || >=24` (`engines` пакета).
 - **Бинарник туннеля:** обязателен, ищется в `~/.dsh/bin` или `PATH`; плагин его не скачивает.
 - **ngrok** блокирует адреса из России (`ERR_NGROK_9040`); там используйте `cloudflared`.
-- **Перезапуск с телефона** не реализован в текущей сборке (кнопка перезапуска сообщает о недоступности).
+- **Лимит ngrok:** 1 ГиБ трафика в месяц на бесплатном аккаунте. Плагин показывает расход и переключается на следующий аккаунт из пула, но саму квоту не увеличивает.
 - Мобильный слой рассчитан на узкие экраны и не меняет десктопную раскладку.
 
 > [!NOTE]
@@ -363,7 +397,7 @@ The three pieces are shipped together:
 
 - **Public access without infrastructure.** A public HTTPS URL is created automatically; no domain or VPS.
 - **Password protection.** Anything behind the URL requires the password you set (minimum 10 characters).
-- **Phone pairing by QR code.** A one-time 8-digit code (with a QR that embeds it) connects the phone; the code is valid for 10 seconds.
+- **Phone pairing by QR code.** A one-time 8-digit code (with a QR that embeds it) connects the phone; the code is valid for 24 hours and the QR points at the public ngrok URL.
 - **Mobile web UI.** On narrow screens the layer adds:
   - a drawer sidebar with the session list, opened from a button in the header;
   - a "new chat" button in the header;
@@ -372,7 +406,12 @@ The three pieces are shipped together:
   - a "back to bottom" button pinned above the input field;
   - keyboard/viewport handling and a standalone PWA manifest with app icons.
 - **Zero desktop impact.** The mobile layer only activates on narrow viewports (≤1023 px); the desktop UI stays native.
-- **Everything managed from the UI.** The ngrok token, the public link, the pairing code and the password are configured in the settings, not by hand-editing files.
+- **Everything managed from the UI.** The ngrok tokens, the public link, the pairing code and the password are configured in the settings, not by hand-editing files.
+- **Several ngrok accounts.** Tokens are added as named rows: the plugin remembers the active one and switches to the next by itself when the current account runs out of monthly traffic (`ERR_NGROK_725`). You can also switch manually by tapping a row in "Links per account"; the active row is outlined in green.
+- **Traffic counter.** Usage is shown as a bar under the logo in the menu (green → orange → red) and in the "Traffic ngrok" card in settings. The number can be corrected by hand from the ngrok dashboard — afterwards the counter keeps growing from your value.
+- **Less traffic.** Assets are cached as `immutable`, the relay recompresses them with brotli (−15% versus gzip), and a service worker keeps the shell and assets in its own storage: a repeat visit costs about 7 KB instead of 350.
+- **VPN hint.** If the UI does not finish loading within 12 seconds, or a network request fails, the plugin explains that DeepSeek is reachable only through a VPN from Russia.
+- **The Mobile UI section comes first** in the settings navigation.
 
 ### Requirements
 
@@ -402,7 +441,7 @@ The tunnel binary (`ngrok` or `cloudflared`) is **required** for public access. 
 
 3. Open the local web UI and go to **Settings → Mobile UI**.
 
-4. Paste your ngrok authtoken into the **Токен ngrok / ngrok token** field and press **Save**. The token is free and taken from the [ngrok dashboard](https://dashboard.ngrok.com/get-started/your-authtoken).
+4. Paste your ngrok authtoken into the **Токен ngrok / ngrok token** field and press **Save**. The token is free and taken from the [ngrok dashboard](https://dashboard.ngrok.com/get-started/your-authtoken). You can add several accounts: a name on the left, the token on the right, and **+ Добавить токен / Add token** adds another row.
 
 5. Wait a few seconds until the **Tunnel** card shows a public URL (the link appears once the tunnel is up).
 
@@ -438,7 +477,7 @@ npm pack
 This produces `dsh-mobile-ui-<version>.tgz`. Install it with the full path:
 
 ```bash
-dsh plugin add "C:\path\to\dsh-mobile-ui-3.5.7.tgz"
+dsh plugin add "C:\path\to\dsh-mobile-ui-3.6.0.tgz"
 ```
 
 #### Option C — the plugin manager in the web UI
@@ -450,7 +489,7 @@ Open DeepSeek Harness, go to **Settings → Plugins** and add the plugin there (
 
 #### Verifying the install
 
-After installing and starting `dsh web`, open **Settings**. You should see a **Mobile UI** section (and a **Сервер / Server** section). If the section is missing, the plugin was not loaded into the profile that is currently running — re-check the profile name and the plugin manager.
+After installing and starting `dsh web`, open **Settings**. You should see a **Mobile UI** section at the top of the list. If the section is missing, the plugin was not loaded into the profile that is currently running — re-check the profile name and the plugin manager.
 
 ### Configuration
 
@@ -458,7 +497,9 @@ All day-to-day settings live in **Settings → Mobile UI**. Configuration is not
 
 | Parameter | Description | Default | Required |
 |---|---|---|---|
-| `ngrokAuthtoken` | ngrok authtoken; synced to the `NGROK_AUTHTOKEN` environment of the running process within ~2 s | empty | Only for ngrok |
+| `ngrokAuthtoken` | ngrok authtoken pool, comma-separated; the active one is synced to the `NGROK_AUTHTOKEN` environment of the running process within ~2 s | empty | Only for ngrok |
+| `ngrokAuthtokenNames` | Labels for the tokens in the same order (UI only; an empty slot becomes "Аккаунт N") | empty | No |
+| `ngrokMonthlyLimitBytes` | Monthly traffic limit of one account in bytes — drives the remaining value and the bar | `1073741824` (1 GiB) | No |
 | `DSH_RELAY_BIND` | Relay bind address | `0.0.0.0` | No |
 | `DSH_RELAY_PORT` | Relay port | `3443` | No |
 | `DSH_RELAY_TLS` | Relay TLS mode | `self-signed` | No |
@@ -472,6 +513,9 @@ Files created by the plugin:
 | `~/.dsh/tunnel-url.txt` | The public URL, written by the tunnel once it is up. |
 | `~/.dsh/relay/state.json` | Relay state (records whether a password is set). |
 | `~/.dsh/relay/` | Relay state directory. |
+| `~/.dsh/ngrok-accounts.json` | Index of the active account in the pool (so a restart does not fall back to an exhausted one). |
+| `~/.dsh/ngrok-urls.json` | Last known public URL of each account — used to build the links list. |
+| `~/.dsh/ngrok-usage.json` | Bytes used per account and month, plus the manual correction from the dashboard. |
 | `~/.dsh/bin/` | Where the tunnel looks for the provider binary (`ngrok`/`cloudflared`). |
 
 > [!IMPORTANT]
@@ -497,7 +541,24 @@ Files created by the plugin:
 
 #### Pairing another phone
 
-Open **Settings → Mobile UI → Подключение телефона** and scan the QR, or enter the code manually. The code is one-time and refreshes every 10 seconds; press **Новый код / New code** to issue a new one immediately.
+Open **Settings → Mobile UI → Подключение телефона** and scan the QR, or enter the code manually. The code is one-time and valid for 24 hours; press **Новый код / New code** to issue a new one immediately. The QR carries the **public ngrok URL**, so it works from any device.
+
+#### Several ngrok accounts
+
+Free ngrok gives **1 GiB of traffic per month per account**. The plugin keeps a pool:
+
+- each row is a **name** followed by a token; **+ Добавить токен / Add token** adds a row;
+- the active account is marked with a **green outline and a checkmark** on the left;
+- when the active account runs out of traffic (`ERR_NGROK_725`), the plugin switches to the next one and restarts the agent;
+- switch manually by **tapping a row** in "Links per account". The copy icon next to it copies the URL without switching accounts;
+- every account has its own permanent domain, so switching **changes the public URL** and the QR.
+
+#### Traffic and limits
+
+- The bar under the logo in the menu shows the **remaining** share: green while more than half is left, orange down to 20%, red below.
+- The **Traffic ngrok** card in settings shows usage, the limit and the account name; the pencil opens a manual value taken from the [ngrok dashboard](https://dashboard.ngrok.com/usage), and the counter keeps growing from it.
+- Savings: assets are cached forever, the relay recompresses them with brotli, and the service worker keeps the shell and assets itself. A repeat visit from the phone costs about 7 KB instead of about 350 KB.
+- Exact per-account numbers always live in the dashboard: the plugin cannot see ngrok's own bytes (the browser warning page, error pages) or other projects' traffic on the same account — that is what the manual correction is for.
 
 #### Changing the password
 
@@ -530,7 +591,7 @@ The tunnel process is detached and kept alive across DSH restarts by design (the
 #### Example 3 — offline install from a tarball
 
 1. `npm run build && npm pack` in the repository.
-2. `dsh plugin add "C:\path\to\dsh-mobile-ui-3.5.7.tgz"`.
+2. `dsh plugin add "C:\path\to\dsh-mobile-ui-3.6.0.tgz"`.
 3. Expected result: the plugin is installed and the settings sections appear after restarting `dsh web`.
 
 ### Troubleshooting
@@ -539,6 +600,9 @@ The tunnel process is detached and kept alive across DSH restarts by design (the
 |---|---|---|
 | No public link appears / "Токен ещё не задан…" | No ngrok authtoken | Set the token in Settings → Mobile UI and press Save. |
 | ngrok exits with `ERR_NGROK_9040` | ngrok blocks addresses from Russia | Switch to Cloudflare: `DSH_TUNNEL_PROVIDER=cloudflared` and install `cloudflared`. |
+| The phone shows `ERR_NGROK_725` | The active account used up its monthly traffic | The plugin switches by itself if a second token is added; otherwise add an account or wait for the 1st of the month. |
+| "все ngrok-аккаунты упёрлись в лимит" | Every token in the pool is exhausted | Add a new ngrok account; the plugin checks the limit once a minute and backs off for 30 minutes after a failed round. |
+| The traffic bar is off | The plugin cannot see ngrok's own bytes or other projects' traffic | Press the pencil in the "Traffic ngrok" card and enter the value from the ngrok dashboard. |
 | "Relay не отвечает — проверьте, что он запущен." | The relay is not running | Make sure `dsh web` is running; check the relay port (`DSH_RELAY_PORT`). |
 | Pairing returns `relay-unavailable` (503) | Relay unreachable from the host route | Restart DSH; verify the relay is up. |
 | Password rejected | Fewer than 10 characters, or fields differ | Use ≥ 10 characters and match both fields. |
@@ -547,7 +611,7 @@ The tunnel process is detached and kept alive across DSH restarts by design (the
 | `dsh: pnpm was not found` | pnpm missing | Install pnpm and put it on `PATH`. |
 | Plugin not detected | Installed into a different profile | Check the active profile and the plugin manager. |
 | Tunnel never starts | Provider binary missing | Put `ngrok`/`cloudflared` on `PATH` or in `~/.dsh/bin/`. |
-| "Перезапуск сервера с телефона недоступен…" | Restart-from-phone is not implemented in this build | Restart from the computer, or reload the interface. |
+| The "works only over VPN" notice appears | DeepSeek did not deliver data from Russia | Turn on a VPN; the notice appears when the UI has not loaded within 12 s. |
 
 ### Updating and uninstalling
 
@@ -578,7 +642,7 @@ or remove it in **Settings → Plugins**.
 
 - Everything behind the public URL is behind a **password** (minimum 10 characters). Set it before sharing the link.
 - The relay uses a **self-signed certificate** on the loopback interface; public TLS is terminated by ngrok/Cloudflare, so the phone talks to the provider over HTTPS.
-- The **pairing code is one-time** and valid for 10 seconds; the QR embeds the link, the code and the certificate fingerprint.
+- The **pairing code is one-time** and valid for 24 hours; the QR embeds the public ngrok URL, the code and the certificate fingerprint.
 - The relay **rate-limits** sign-in (6000 requests/minute), allows 20 failed attempts and then locks out for 5 minutes; a signed-in session lasts 30 days.
 - **Settings cannot be changed remotely**: the token and password can only be written from the machine running DSH.
 
@@ -593,7 +657,11 @@ or remove it in **Settings → Plugins**.
 
 **ngrok or Cloudflare?** ngrok is the default and needs a free authtoken. Use Cloudflare (`DSH_TUNNEL_PROVIDER=cloudflared`) if ngrok is blocked or you prefer no account.
 
-**Why do I see two settings sections?** The plugin adds **Mobile UI** (token, link, pairing, password) and **Сервер / Server** (public link, pairing, password, restart). The main one to configure is **Mobile UI**.
+**How many phones can connect?** As many as you like: sign-in is password-based, a session lasts 30 days, and all devices share one tunnel.
+
+**What happens when the ngrok traffic runs out?** If the pool has a second account, the plugin switches to it and restarts the tunnel; the URL and the QR change accordingly. With a single account, ngrok shows `ERR_NGROK_725` until the 1st of the month.
+
+**Can I stop keeping the phone in the foreground?** Yes — the sign-in session lasts 30 days and assets are cached, so a repeat visit costs almost nothing.
 
 **Does this change the desktop UI?** No. The mobile layer only activates on narrow viewports (≤1023 px).
 
@@ -606,7 +674,7 @@ or remove it in **Settings → Plugins**.
 - **Node.js:** `^22.19.0 || >=24` (package `engines`).
 - **Tunnel binary:** required, resolved from `~/.dsh/bin` or `PATH`; the plugin does not download it.
 - **ngrok** blocks addresses from Russia (`ERR_NGROK_9040`); use `cloudflared` there.
-- **Restart-from-phone** is not implemented in the current build (the "restart" button reports it is unavailable).
+- **ngrok limit:** 1 GiB of traffic per month on a free account. The plugin shows usage and switches to the next account in the pool, but it cannot raise the quota itself.
 - The mobile layer targets narrow viewports; it does not alter the desktop layout.
 
 > [!NOTE]

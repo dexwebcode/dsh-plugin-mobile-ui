@@ -206,6 +206,9 @@ async function start(ctx, config, log) {
 	});
 	const untap = config.uiLink ? ctx.webServer.tapIndex(injectRelayLink) : () => void 0;
 	const untapShim = ctx.webServer.tapIndex(injectSecureContextShim);
+	// Регистрация service worker: кэш ассетов переживает очистку HTTP-кэша
+	// браузером, поэтому повторный вход на телефоне не тянет 470 КБ заново.
+	const untapServiceWorker = ctx.webServer.tapIndex(injectServiceWorker);
 	const reachable = ["127.0.0.1", ...localAddresses()].map((address) => `${scheme}://${address}:${String(primary.port)}`).join(" ");
 	log.info(`listening on ${reachable} (harness on 127.0.0.1:${String(ctx.webServer.port)})`);
 	if (material === void 0) log.warn("serving plaintext: anything on the network path can read this traffic and the credentials on it");
@@ -222,6 +225,7 @@ async function start(ctx, config, log) {
 	}) : async () => void 0;
 	return { stop: async () => {
 		clearInterval(poll);
+		untapServiceWorker();
 		untapShim();
 		untap();
 		unroute();

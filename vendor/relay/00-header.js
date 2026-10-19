@@ -19,4 +19,5 @@ import QRCode from "qrcode";
 import { createServer, request } from "node:http";
 import { createServer as createServer$1 } from "node:https";
 import { chmod, mkdir, readFile, rename, writeFile } from "node:fs/promises";
+import { brotliCompress, constants as zlibConstants, gunzip } from "node:zlib";
 

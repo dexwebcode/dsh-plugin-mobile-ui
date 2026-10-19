@@ -63,6 +63,27 @@ function originOf(req, secure) {
 	return `${secure ? "https" : "http"}://${host}`;
 }
 /**
+ * The origin a pairing invitation should advertise.
+ *
+ * ПРАВКА ВЕНДОРА (локально): мост `/mobile-ui/pair` спрашивает relay по
+ * loopback, поэтому `originOf` возвращал `https://127.0.0.1:3443` — и QR на
+ * компьютере вёл на адрес самого телефона. Если запрос пришёл на loopback-имя,
+ * а публичное имя известно (`publicHostnames`), в приглашение попадает оно.
+ * @param req - the inbound request, read for the host it addressed.
+ * @param secure - whether this listener speaks TLS.
+ * @param publicHostnames - names the deployment is reached by from outside.
+ * @returns the origin to put into the QR and the invitation.
+ */
+function qrOriginOf(req, secure, publicHostnames) {
+	const host = typeof req.headers.host === "string" ? req.headers.host : "localhost";
+	const hostname = host.replace(/:\d+$/, "").replace(/^\[/, "").replace(/\]$/, "");
+	const loopback = hostname === "localhost" || hostname === "::1" || /^127\./.test(hostname);
+	if (loopback && Array.isArray(publicHostnames) && publicHostnames.length > 0) {
+		return `https://${publicHostnames[0]}`;
+	}
+	return `${secure ? "https" : "http"}://${host}`;
+}
+/**
 * The plain listener's origin, as this client would reach it.
 * @param req - the inbound request, read for the host it addressed.
 * @param plainPort - the compatibility listener's port, when one is running.
@@ -83,6 +104,8 @@ function plainOriginOf(req, plainPort) {
 */
 async function serve(req, res, runtime, policy, authorities) {
 	const now = Date.now();
+	// Считаем исходящий трафик: всё, что уйдёт клиенту, попадёт в лимит ngrok.
+	usageCountResponse(res);
 	const address = normalizeAddress(req.socket.remoteAddress);
 	const local = isLoopbackHostname(address === "" ? "x" : address);
 	if ((!local || isForwarded(req.headers)) && runtime.auth.exceedsRate(address, now)) {
@@ -114,6 +137,17 @@ async function serve(req, res, runtime, policy, authorities) {
 		return;
 	}
 	const identity = classify(runtime.auth, req, address, local, policy, now);
+	// Service worker отдаём сами: браузер запрашивает его без страницы, и он
+	// должен быть доступен до входа. Файл статический и ничего не раскрывает.
+	if (url.pathname === SERVICE_WORKER_PATH && (req.method === "GET" || req.method === "HEAD")) {
+		res.writeHead(200, {
+			"content-type": "application/javascript; charset=utf-8",
+			"cache-control": "no-cache",
+			"service-worker-allowed": "/"
+		});
+		res.end(req.method === "HEAD" ? void 0 : SERVICE_WORKER_SOURCE);
+		return;
+	}
 	if (url.pathname === RELAY_PREFIX || url.pathname.startsWith(`${RELAY_PREFIX}/`)) {
 		if (!policy.servesRelayRoutes && url.pathname !== "/relay/health") {
 			res.writeHead(404, { "content-type": "text/plain; charset=utf-8" });
@@ -126,6 +160,7 @@ async function serve(req, res, runtime, policy, authorities) {
 			identity,
 			address,
 			origin: originOf(req, policy.secure),
+		qrOrigin: qrOriginOf(req, policy.secure, runtime.config.publicHostnames),
 			plainOrigin: plainOriginOf(req, runtime.plainPort),
 			fingerprint: runtime.fingerprint,
 			secure: policy.secure,

@@ -6,6 +6,25 @@ import { ensurePublicHostname, probe, writeUrlFile } from './publish.js'
 import { delay, resolveBinary } from './runtime.js'
 
 /**
+ * Перезапуск активного туннеля.
+ *
+ * Сторож перезапускает только умершего агента: живой агент с исчерпанным
+ * аккаунтом ngrok для него здоров (порт отвечает, ссылка выдана). Смена аккаунта
+ * по лимиту трафика (`lib/host/ngrok-accounts.js`) поэтому просит перезапуск
+ * здесь — только эффект владеет `child`.
+ */
+let restartActive = null
+
+/**
+ * Перезапустить активный туннель, если он вообще поднимался.
+ * @returns true, если перезапуск выполнен.
+ */
+export function restartTunnel() {
+  if (restartActive === null) return Promise.resolve(false)
+  return restartActive()
+}
+
+/**
  * Поднять туннель, следить за ним и регистрировать его имя в relay.
  *
  * Тело эффекта держит всё состояние агента в замыкании: `child` — запущенный
@@ -93,6 +112,16 @@ export function supervise(ctx, provider, options, log) {
       await publish(url)
     }
 
+    // Регистрируем перезапуск: им пользуется смена ngrok-аккаунта по лимиту.
+    restartActive = async () => {
+      if (disposed) return false
+      killOwn()
+      child = undefined
+      await delay(1000)
+      await ensure()
+      return true
+    }
+
     void ensure().catch((error) => { log.warn(`tunnel setup failed: ${String(error)}`) })
 
     // Сторож: живой туннель не должен умирать незамеченным.
@@ -112,6 +141,7 @@ export function supervise(ctx, provider, options, log) {
 
     return () => {
       disposed = true
+      restartActive = null
       clearInterval(watchdog)
       if (!options.keepTunnelOnExit) process.removeListener('exit', killOwn)
     }

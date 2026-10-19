@@ -1,4 +1,4 @@
-//#region lib/types/secure-context.js
+﻿//#region lib/types/secure-context.js
 // 12-secure-context.js — подмена secure context для старых браузеров.
 /**
 * A UUID for a page the browser refuses to call secure.
@@ -82,6 +82,129 @@ function injectSecureContextShim(html) {
 	if (open === null) return html;
 	const at = open.index + open[0].length;
 	return `${html.slice(0, at)}${MARKUP}${html.slice(at)}`;
+}
+
+//#endregion
+//#region lib/types/service-worker.js
+// 12b-service-worker.js — кэш оболочки и ассетов, переживающий очистку HTTP-кэша.
+//
+// ПРАВКА ВЕНДОРА (локально). Зачем: страница тянет ~350 КБ (brotli) ассетов и
+// ещё раз запрашивает оболочку при каждой перезагрузке; мобильные браузеры к
+// тому же вычищают HTTP-кэш за неделю — телефон качает всё заново, выжигая
+// лимит ngrok.
+//
+// Что делает воркер:
+//   * при установке скачивает оболочку и все ассеты, на которые она ссылается,
+//     в Cache Storage — дальше они доступны, даже если HTTP-кэш очищен;
+//   * навигацию (саму страницу) отдаёт из кэша сразу, а свежую версию тянет
+//     фоном и кладёт на следующий раз: перезагрузка перестаёт быть «скачать всё»;
+//   * /assets/* отдаёт из кэша, в сеть идёт только за новыми (новый хэш в имени).
+//
+// Данные не кэшируются: API, websocket и чужие origin идут мимо воркера, поэтому
+// устаревших сессий или ответов модели быть не может.
+var SERVICE_WORKER_PATH = "/dsh-mobile-sw.js";
+var SERVICE_WORKER_MARKER = "dsh-mobile-sw";
+var SERVICE_WORKER_SOURCE = `/* dsh-relay: кэш оболочки и ассетов. */
+const CACHE = "dsh-mobile-shell-v3";
+const SHELL = "/";
+/** Скачать оболочку и все ассеты, на которые она ссылается. */
+async function precache() {
+	const cache = await caches.open(CACHE);
+	const response = await fetch(SHELL, { cache: "no-store" });
+	if (!response.ok) return;
+	const html = await response.clone().text();
+	await cache.put(SHELL, response);
+	const assets = new Set();
+	const pattern = /(?:src|href)="([^"]*\\/assets\\/[^"]+)"/g;
+	let match = pattern.exec(html);
+	while (match !== null) {
+		assets.add(match[1]);
+		match = pattern.exec(html);
+	}
+	await Promise.all([...assets].map(async (url) => {
+		try {
+			const asset = await fetch(url);
+			if (asset.ok) await cache.put(url, asset);
+		} catch {
+			/* один недоступный ассет не должен срывать установку */
+		}
+	}));
+}
+self.addEventListener("install", (event) => {
+	event.waitUntil(precache().catch(() => {}).then(() => self.skipWaiting()));
+});
+self.addEventListener("activate", (event) => {
+	event.waitUntil((async () => {
+		// Кэши прошлых версий удаляем: имена файлов сменились вместе со сборкой.
+		const names = await caches.keys();
+		await Promise.all(names.filter((name) => name !== CACHE).map((name) => caches.delete(name)));
+		await self.clients.claim();
+	})());
+});
+/** Отдать из кэша, иначе сходить в сеть и запомнить. */
+async function cacheFirst(request, key) {
+	const cache = await caches.open(CACHE);
+	const hit = await cache.match(key ?? request);
+	if (hit !== undefined) return hit;
+	const response = await fetch(request);
+	if (response.ok) await cache.put(key ?? request, response.clone());
+	return response;
+}
+/** Оболочку берём из сети, кэш — только когда сети нет. */
+async function networkFirstShell(request) {
+	const cache = await caches.open(CACHE);
+	try {
+		const response = await fetch(request);
+		if (response.ok) await cache.put(SHELL, response.clone());
+		return response;
+	} catch {
+		const hit = await cache.match(SHELL);
+		if (hit !== undefined) return hit;
+		return new Response("Страница недоступна без сети", { status: 503, headers: { "content-type": "text/plain; charset=utf-8" } });
+	}
+}
+self.addEventListener("fetch", (event) => {
+	const request = event.request;
+	if (request.method !== "GET") return;
+	let url;
+	try {
+		url = new URL(request.url);
+	} catch {
+		return;
+	}
+	if (url.origin !== self.location.origin) return;
+	// Оболочку всегда спрашиваем у сети: она весит единицы килобайт, зато новая
+	// сборка видна сразу. Кэш остаётся страховкой на случай, когда сети нет.
+	if (request.mode === "navigate") {
+		event.respondWith(networkFirstShell(request));
+		return;
+	}
+	if (/^\\/assets\\//.test(url.pathname)) {
+		event.respondWith(cacheFirst(request));
+	}
+});
+`;
+/** Inline registration spliced into the document head. */
+var SERVICE_WORKER_MARKUP = `<script id="${SERVICE_WORKER_MARKER}">(function(){try{
+if(!("serviceWorker" in navigator))return;
+addEventListener("load",function(){
+navigator.serviceWorker.register("${SERVICE_WORKER_PATH}",{scope:"/"}).catch(function(){});
+});
+}catch(e){}})()<\/script>`;
+/**
+* Add the service worker registration to one index document.
+*
+* Idempotent like the secure-context shim: the marker attribute is the guard
+* against a double injection after a client-side navigation.
+* @param html - the index document as the frontend server rendered it.
+* @returns the document with the registration, or unchanged.
+*/
+function injectServiceWorker(html) {
+	if (html.includes(SERVICE_WORKER_MARKER)) return html;
+	const open = /<head(?:\s[^>]*)?>/i.exec(html) ?? /<body(?:\s[^>]*)?>/i.exec(html);
+	if (open === null) return html;
+	const at = open.index + open[0].length;
+	return `${html.slice(0, at)}${SERVICE_WORKER_MARKUP}${html.slice(at)}`;
 }
 
 //#endregion

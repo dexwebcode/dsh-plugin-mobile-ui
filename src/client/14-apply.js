@@ -8,10 +8,12 @@ const inject = ['slots', 'configForms']
  */
 function apply(ctx) {
   try {
+    // Раздел «Сервер» убран: всё, что нужно, собрано в одном разделе Mobile UI.
     installSettingsSection(ctx)
-    installServerAccessSection(ctx)
     ctx.effect(() => {
       installStyles()
+      const uninstallVpnHint = installVpnHint()
+      const uninstallUsageBar = installUsageBar()
       const uninstallMeta = installViewportMeta()
       const uninstallAppIcons = installAppIcons()
       const uninstallViewport = installViewportTracking()
@@ -23,6 +25,8 @@ function apply(ctx) {
         uninstallViewport()
         uninstallAppIcons()
         uninstallMeta()
+        uninstallUsageBar()
+        uninstallVpnHint()
         removeStyles()
       }
     }, 'dsh-mobile-ui: mobile layer')

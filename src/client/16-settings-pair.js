@@ -72,7 +72,12 @@ function usePairInvitation(active) {
   React.useEffect(() => {
     if (!active) return undefined
     void refresh()
-    return undefined
+    // Самовосстановление: если хост ответил ошибкой (relay был недоступен),
+    // панель иначе замирает навсегда — отсчёт стоит на нуле, и эффект ниже не
+    // перезапускается без изменения состояния. Опрос раз в 10 секунд заодно
+    // держит код и QR актуальными.
+    const keepAlive = window.setInterval(() => { void refresh() }, 10000)
+    return () => { window.clearInterval(keepAlive) }
   }, [active, refresh])
 
   React.useEffect(() => {
