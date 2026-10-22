@@ -72,7 +72,6 @@ _DROP_ENV = (
     "DSH_PROFILE_DIR",
     "DSH_SHELL",
     "DSH_WEB_URL",
-    "DSH_TUNNEL_PROVIDER",
     # Права выставляет бот под каждый ход, а не внешняя среда запуска.
     "DSH_PERMISSION_MODE",
 )
