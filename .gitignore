@@ -1,9 +1,3 @@
-# Build artifacts
-*.tgz
-
-# Dependencies
-node_modules/
-
 # Telegram bot runtime and secrets
 Telegram Bot/.venv/
 Telegram Bot/logs/
