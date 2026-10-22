@@ -35,7 +35,7 @@ Telegram ──long polling──▶ bot.py ──▶ DeepSeek API / DSH-аге�
 ## Установка
 
 ```powershell
-$bot = 'C:\Users\<Имя>\...\dsh-plugin-mobile-ui\Telegram Bot'
+$bot = 'C:\Users\<Имя>\...\dsh-plugin-telegram-bot\Telegram Bot'
 
 uv venv "$bot\.venv" --python 3.12
 uv pip install --python "$bot\.venv\Scripts\python.exe" -r "$bot\requirements.txt"
