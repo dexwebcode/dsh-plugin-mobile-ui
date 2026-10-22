@@ -1,0 +1,25 @@
+{
+  "botToken": "123456789:AAHdqTcvCH1vGWJxfSeofSAs0K5PALDsaw",
+  "botUsername": "",
+  "allowedChatIds": [],
+  "backend": "agent",
+  "deepseekApiKey": "sk-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+  "fastModel": "deepseek-flash",
+  "fastMaxTokens": 4096,
+  "fastSystemPrompt": "Ты — личный помощник в Telegram. Отвечай по-русски, кратко и по делу. Можно Markdown: **жирный**, код, `блоки`, списки и ссылки.",
+  "agentTimeoutMs": 0,
+  "agentModel": "deepseek-flash",
+  "agentReasoningEffort": "high",
+  "defaultPermission": "danger-full-access",
+  "dshProfile": "headless",
+  "dshHome": "C:\\Users\\<Имя>\\.dsh",
+  "dshCwd": "C:\\Users\\<Имя>\\Documents\\deepseek-harness\\default-workspace",
+  "maxHistory": 24,
+  "proxy": "",
+  "http": {
+    "enabled": true,
+    "host": "127.0.0.1",
+    "port": 8099
+  },
+  "idleTimeoutSec": 0
+}

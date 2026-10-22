@@ -104,8 +104,6 @@ function plainOriginOf(req, plainPort) {
 */
 async function serve(req, res, runtime, policy, authorities) {
 	const now = Date.now();
-	// Считаем исходящий трафик: всё, что уйдёт клиенту, попадёт в лимит ngrok.
-	usageCountResponse(res);
 	const address = normalizeAddress(req.socket.remoteAddress);
 	const local = isLoopbackHostname(address === "" ? "x" : address);
 	if ((!local || isForwarded(req.headers)) && runtime.auth.exceedsRate(address, now)) {

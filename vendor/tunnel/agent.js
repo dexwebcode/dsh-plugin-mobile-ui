@@ -31,9 +31,35 @@ export function getJson(url) {
  *   `undefined`, когда агента нет вовсе.
  */
 export async function existingUrl(provider, options) {
+  // Именованный туннель адрес по HTTP не отдаёт: он закреплён в конфигурации,
+  // а `/ready` говорит лишь о том, что соединение с edge поднято.
+  if (typeof provider.staticUrl === 'function') {
+    const alive = await portAlive(`http://127.0.0.1:${options.controlPort}${provider.controlPath}`)
+    return alive ? provider.staticUrl(options) : undefined
+  }
   const body = await getJson(`http://127.0.0.1:${options.controlPort}${provider.controlPath}`)
   if (body === undefined) return undefined
-  return provider.publicUrl(body) ?? null
+  return provider.publicUrl(body, options) ?? null
+}
+
+/**
+ * Проверить, что управляющий порт отвечает и туннель готов.
+ *
+ * `/ready` у cloudflared отдаёт 200 только при живом соединении с edge,
+ * 503 — когда коннектор поднят, но связи нет. Отвечать «жив» на 503 нельзя:
+ * зависший коннектор никто не перезапустит.
+ * @param url - адрес запроса.
+ * @returns true только на 2xx.
+ */
+function portAlive(url) {
+  return new Promise((resolve) => {
+    const request = httpGet(url, { timeout: 3000 }, (response) => {
+      response.resume()
+      resolve(response.statusCode >= 200 && response.statusCode < 300)
+    })
+    request.on('timeout', () => { request.destroy() })
+    request.on('error', () => { resolve(false) })
+  })
 }
 
 /**

@@ -5,17 +5,16 @@
 # and no other plugin is required:
 #   * `dsh-plugin-mobile-ui/relay`  — password sign-in + TLS in front of the loopback
 #     webserver (vendored dsh-relay host half);
-#   * `dsh-plugin-mobile-ui/tunnel` — ngrok (cloudflared as fallback) exposes the relay
+#   * `dsh-plugin-mobile-ui/tunnel` — cloudflared exposes the relay
 #     publicly (vendored dsh-tunnel);
 #   * `dsh-plugin-mobile-ui`        — the mobile layer over the official web UI.
 #
 # The official web app is served by the base bundle (`@deepseek-ai/dsh-web-app`);
 # nothing else in the harness is touched. Removing this bundle removes all three.
 #
-# ngrok vs cloudflared: the tunnel reads `provider` below. ngrok needs an account
-# and authtoken (run `ngrok config add-authtoken <token>` once) and blocks Russian
-# addresses with ERR_NGROK_9040; cloudflared works without an account. Flip
-# `provider` (or set `DSH_TUNNEL_PROVIDER=cloudflared`) when ngrok is unavailable.
+# cloudflared: the tunnel reads `provider` below. It needs no account and no
+# authtoken, and has no traffic limit. Override with `DSH_TUNNEL_PROVIDER` to pick
+# `cloudflared` (quick, random URL) or `cloudflared-named` (fixed URL + CNAME).
 #
 # `publicHostnames` stays empty on purpose. The relay answers only the authorities
 # it knows about, and the tunnel name is not one of them; the vendored tunnel
@@ -50,7 +49,7 @@
     - id: tunnel
       name: 'dsh-plugin-mobile-ui/tunnel'
       config:
-        provider: !!js process.env.DSH_TUNNEL_PROVIDER ?? 'ngrok'
+        provider: !!js process.env.DSH_TUNNEL_PROVIDER ?? 'cloudflared'
         target: 'https://127.0.0.1:3443'
         updateRelayHostnames: false
     - id: mobile-ui
@@ -61,4 +60,8 @@
         tunnelUrlFile: !!js dshHomePath('tunnel-url.txt')
         relayStateFile: !!js dshHomePath('relay/state.json')
         relayPort: !!js Number(process.env.DSH_RELAY_PORT ?? 3443)
-        tunnelProvider: !!js process.env.DSH_TUNNEL_PROVIDER ?? 'ngrok'
+        tunnelProvider: !!js process.env.DSH_TUNNEL_PROVIDER ?? 'cloudflared'
+        # config.json Telegram-бота: в него раздел «Telegram API» пишет токен
+        # и рядом ставит .runtime/restart.flag. Пусто — раздел только
+        # показывает подсказку, ничего не сохраняя.
+        telegramConfigFile: !!js process.env.DSH_TELEGRAM_CONFIG ?? ''

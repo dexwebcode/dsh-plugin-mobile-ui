@@ -211,17 +211,6 @@ async function handleRelayRoute(req, res, url, context) {
 		});
 		return;
 	}
-	if (path === "/relay/usage.json" && method === "GET") {
-		if (!isOperator(identity)) {
-			refuse(req, res, "Usage is reported on the machine running the harness.");
-			return;
-		}
-		sendJson(res, 200, {
-			bytes: USAGE_BYTES,
-			since: USAGE_SINCE
-		});
-		return;
-	}
 	if (path === "/relay/pair" && method === "GET") {
 		if (isOperator(identity)) {
 			const code = auth.pairing.peek(now) ?? auth.pairing.issue(config.pairingCodeLength, config.pairingWindowMs, now);

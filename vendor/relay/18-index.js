@@ -209,11 +209,10 @@ async function start(ctx, config, log) {
 	// Регистрация service worker: кэш ассетов переживает очистку HTTP-кэша
 	// браузером, поэтому повторный вход на телефоне не тянет 470 КБ заново.
 	const untapServiceWorker = ctx.webServer.tapIndex(injectServiceWorker);
-	const reachable = ["127.0.0.1", ...localAddresses()].map((address) => `${scheme}://${address}:${String(primary.port)}`).join(" ");
-	log.info(`listening on ${reachable} (harness on 127.0.0.1:${String(ctx.webServer.port)})`);
+	// Адрес в консоль не печатаем: ссылки relay не нужны.
 	if (material === void 0) log.warn("serving plaintext: anything on the network path can read this traffic and the credentials on it");
 	if (compat !== void 0) log.warn(`plain compatibility listener on port ${String(compat.port)}: DSH Mobile 0.5.0 only, no configuration access`);
-	if (!auth.hasPassword) log.info(`no password set yet — open ${scheme}://127.0.0.1:${String(primary.port)}/relay/password on this machine to set one`);
+	if (!auth.hasPassword) log.info('Пароль ещё не задан — задайте его в настройках Mobile UI.');
 	const unadvertise = config.mdns ? await advertise({
 		port: primary.port,
 		plainPort: compat?.port,

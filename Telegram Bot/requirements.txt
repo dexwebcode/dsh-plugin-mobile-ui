@@ -1,0 +1,5 @@
+# Зависимости бота. Ставятся в .venv рядом с bot.py:
+#   uv venv .venv --python 3.12
+#   uv pip install --python .venv\Scripts\python.exe -r requirements.txt
+aiogram>=3.13
+aiohttp-socks>=0.8

@@ -4,6 +4,16 @@
 # Dependencies
 node_modules/
 
+# Telegram bot runtime and secrets
+Telegram Bot/.venv/
+Telegram Bot/logs/
+Telegram Bot/.runtime/
+Telegram Bot/__pycache__/
+Telegram Bot/state.json
+Telegram Bot/config.json
+__pycache__/
+*.pyc
+
 # OS noise
 .DS_Store
 Thumbs.db

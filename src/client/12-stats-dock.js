@@ -185,6 +185,7 @@ function installStatsDock() {
   const applyBarStyles = (bar) => {
     const style = bar.style
     style.position = 'fixed'
+    // Полоса стоит вплотную к верху экрана — ровно там, где стояла всегда.
     style.top = '0'
     // По 22px от краёв экрана: левый край полосы совпадает с левым краем кита
     // (20px) и вкладки «Chat» (25px), правый отступает на столько же.
@@ -218,18 +219,49 @@ function installStatsDock() {
   const setFramePadding = (height) => {
     const frame = document.querySelector("[class$='_frame']")
     if (frame === null) return
-    if (height > 0) frame.style.paddingTop = `${height}px`
-    else frame.style.removeProperty('padding-top')
+    // Ноль ставим явно: `removeProperty` возвращает правило CSS, а оно резервирует
+    // место под полосу всегда — в экономном режиме сверху оставалась пустая полоса.
+    frame.style.paddingTop = height > 0 ? `${height}px` : '0px'
+  }
+
+  /**
+   * Спрятать живую полосу harness целиком.
+   *
+   * В экономном режиме статистики не должно быть вовсе: ни наверху, ни над полем
+   * ввода. Док живёт в разметке harness, поэтому прячем его инлайново — правила
+   * слоя могут не достать до него в текущем состоянии.
+   *
+   * @param hidden - прятать ли полосу.
+   */
+  const setDockHidden = (hidden) => {
+    const dock = document.querySelector(DOCK_SELECTOR)
+    if (dock === null) return
+    if (hidden) {
+      if (dock.style.display !== 'none') dock.style.display = 'none'
+      return
+    }
+    if (dock.style.display === 'none') dock.style.removeProperty('display')
   }
 
   const measure = () => {
     if (!isNarrow()) {
       syncEmpty(false, null)
+      setDockHidden(false)
       missingSince = 0
       setFramePadding(0)
       root.style.removeProperty(DOCK_HEIGHT_VAR)
       return
     }
+    // Экономный режим: полосы нет совсем, значит и места под неё не нужно.
+    if (isEconomyMode()) {
+      syncEmpty(false, null)
+      setDockHidden(true)
+      missingSince = 0
+      root.style.removeProperty(DOCK_HEIGHT_VAR)
+      setFramePadding(0)
+      return
+    }
+    setDockHidden(false)
     rememberTemplate()
     liftDock()
     // Своя полоса показывается ВСЕГДА, а живая под ней просто живёт. Почему так:
@@ -261,11 +293,15 @@ function installStatsDock() {
   const timer = window.setInterval(measure, 1000)
   window.addEventListener('resize', measure)
   window.addEventListener('orientationchange', measure)
+  // Переключение режима меняет и наличие статистики, и отступ кадра.
+  window.addEventListener(MODE_CHANGE_EVENT, measure)
 
   return () => {
     clearInterval(timer)
     window.removeEventListener('resize', measure)
     window.removeEventListener('orientationchange', measure)
+    window.removeEventListener(MODE_CHANGE_EVENT, measure)
+    setDockHidden(false)
     if (empty !== null) empty.remove()
     empty = null
     root.style.removeProperty(DOCK_HEIGHT_VAR)

@@ -103,8 +103,6 @@ function forwardUpgrade(req, socket, head, target, ledger) {
 		});
 		if (upstreamHead.length > 0) socket.write(upstreamHead);
 		if (head.length > 0) upstreamSocket.write(head);
-		// Считаем кадры, уходящие клиенту: чат и есть основной трафик.
-		usageCountSocket(socket);
 		upstreamSocket.pipe(socket);
 		socket.pipe(upstreamSocket);
 	});

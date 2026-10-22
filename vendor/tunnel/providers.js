@@ -18,12 +18,11 @@ export function originHost(target) {
  * Провайдеры туннеля. У каждого — свой управляющий HTTP-порт, по которому
  * видно, что агент жив, и откуда берётся публичный адрес.
  *
- * ПРАВКА ВЕНДОРА (dsh-plugin-mobile-ui): обе ветки подставляют в Host заголовок
- * loopback-имя цели (`--http-host-header` у cloudflared, `--host-header` у
- * ngrok). Зачем: relay отвечает только тем authority, что перечислены в его
- * `bind`/`publicHostnames`/`trustedHosts`, а loopback-имена он принимает всегда.
- * Без подстановки публичный адрес получает 403 «untrusted-host», потому что имя
- * туннеля в конфиг relay не попадает. Подстановка делает это ненужным.
+ * ПРАВКА ВЕНДОРА (dsh-plugin-mobile-ui): quick-туннель cloudflared подставляет
+ * в Host loopback-имя цели (`--http-host-header`). Зачем: relay отвечает только
+ * тем authority, что перечислены в его `bind`/`publicHostnames`/`trustedHosts`,
+ * а loopback-имена он принимает всегда. Именованный туннель этого не делает —
+ * его имя уже в `publicHostnames` relay.
  */
 export const PROVIDERS = {
   cloudflared: {
@@ -48,29 +47,26 @@ export const PROVIDERS = {
       return typeof host === 'string' && host !== '' ? `https://${host}` : undefined
     },
   },
-  ngrok: {
-    binaryName: 'ngrok',
-    defaultControlPort: 4040,
-    controlPath: '/api/tunnels',
-    args: (options) => {
-      // --host-header намеренно не передаётся: с ним relay видит Host: 127.0.0.1,
-      // а браузер присылает Origin: https://<публичное имя>, и checkFence()
-      // отклоняет модульные скрипты как "origin-mismatch" — страница на телефоне
-      // не грузится. Настоящий Host разрешён через publicHostnames.
-      const args = ['http', options.target, '--log=stdout']
-      // authtoken передаём флагом: env NGROK_AUTHTOKEN этот ngrok не применяет,
-      // если токен уже есть в глобальном конфиге, и агент поднимается на старом
-      // аккаунте (у него кончился трафик — ERR_NGROK_725).
-      const token = process.env.NGROK_AUTHTOKEN ?? ''
-      if (token !== '') args.push('--authtoken', token)
-      return args
-    },
-    publicUrl: (body) => {
-      const tunnels = Array.isArray(body?.tunnels) ? body.tunnels : []
-      const found = tunnels.find(
-        (tunnel) => typeof tunnel?.public_url === 'string' && tunnel.public_url.startsWith('https://'),
-      )
-      return found?.public_url
-    },
+  /**
+   * Именованный (не quick) туннель cloudflared с постоянным адресом.
+   *
+   * Отличие от `cloudflared`: тот поднимает временный `*.trycloudflare.com` и
+   * отдаёт имя через `/quicktunnel`. Здесь имя закреплено заранее (CNAME в зоне
+   * Cloudflare), поэтому адрес берётся из конфигурации, а `/ready` служит только
+   * признаком того, что соединение с edge установлено.
+   */
+  'cloudflared-named': {
+    binaryName: 'cloudflared',
+    defaultControlPort: 20242,
+    controlPath: '/ready',
+    staticUrl: (options) => options.namedUrl,
+    args: (options) => [
+      // Глобальные флаги — до команды: `run` принимает только имя туннеля,
+      // и `--metrics`, поставленный после него, читается как лишний аргумент.
+      '--config', options.namedConfig,
+      '--metrics', `127.0.0.1:${options.controlPort}`,
+      '--no-autoupdate',
+      'tunnel', 'run', options.namedTunnel,
+    ],
   },
 }

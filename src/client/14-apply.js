@@ -1,6 +1,6 @@
 // 14-apply.js — точка входа клиентской половины.
-// `slots` — реестр слотов интерфейса, `configForms` — доступ к настройкам хоста.
-const inject = ['slots', 'configForms']
+// `slots` — реестр слотов интерфейса.
+const inject = ['slots']
 
 /**
  * Включить мобильный слой и раздел настроек.
@@ -12,8 +12,10 @@ function apply(ctx) {
     installSettingsSection(ctx)
     ctx.effect(() => {
       installStyles()
+      // Режимы применяются раньше остального: от них зависит, что показывать.
+      const uninstallModes = installModes()
+      const uninstallLazyMedia = installLazyMedia()
       const uninstallVpnHint = installVpnHint()
-      const uninstallUsageBar = installUsageBar()
       const uninstallMeta = installViewportMeta()
       const uninstallAppIcons = installAppIcons()
       const uninstallViewport = installViewportTracking()
@@ -25,8 +27,9 @@ function apply(ctx) {
         uninstallViewport()
         uninstallAppIcons()
         uninstallMeta()
-        uninstallUsageBar()
         uninstallVpnHint()
+        uninstallLazyMedia()
+        uninstallModes()
         removeStyles()
       }
     }, 'dsh-plugin-mobile-ui: mobile layer')

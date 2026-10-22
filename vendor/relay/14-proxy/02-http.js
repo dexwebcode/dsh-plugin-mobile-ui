@@ -9,7 +9,7 @@ function loopbackAuthority(target) {
 *
 * ПРАВКА ВЕНДОРА (локально): harness не отдаёт `cache-control` для хэшированных
 * ассетов сборки. Браузер поэтому качал все ~470 КБ при каждом входе — это и
-* выжигало лимит ngrok. Имя файла у Vite содержит хэш содержимого, так что такие
+* тратило мобильный трафик. Имя файла у Vite содержит хэш содержимого, так что такие
 * ответы можно кэшировать навсегда; HTML наоборот не кэшируем, иначе телефон
 * залипнет на старой сборке.
 * @param headers - the response headers, already stripped of hop-by-hop entries.
@@ -105,6 +105,18 @@ function forward(req, res, target) {
 	return new Promise((resolve$1) => {
 		const pathname = (req.url ?? "/").split("?")[0];
 		const wantsBrotli = acceptsBrotli(headerValue(req.headers, "accept-encoding"));
+		/** Картинка, вынутая из бандла плагина: отдаём из памяти, без harness. */
+		const inline = INLINE_ASSETS.get(pathname);
+		if (inline !== undefined) {
+			res.writeHead(200, {
+				"content-type": "image/png",
+				"content-length": String(inline.length),
+				"cache-control": "public, max-age=31536000, immutable"
+			});
+			res.end(inline);
+			resolve$1();
+			return;
+		}
 		const cached = BROTLI_CACHE.get(pathname);
 		if (wantsBrotli && cached !== void 0) {
 			sendBrotli(res, cached);
@@ -136,7 +148,13 @@ function forward(req, res, target) {
 			const headers = downstreamHeaders(upstreamRes.headers);
 			applyCacheHeaders(headers, pathname);
 			const status = upstreamRes.statusCode ?? 502;
-			if (!wantsBrotli || status !== 200 || !ASSET_PATH.test(pathname)) {
+			/**
+			 * Бандл «Аккаунта» везёт иллюстрации онбординга прямо в base64:
+			 * 5 МБ из 5,15 МБ файла. Вырезаем их до отправки на телефон — на
+			 * экране приветствия они всё равно нужны далеко не сразу.
+			 */
+			const extractInline = status === 200 && PLUGIN_BUNDLE_WITH_INLINE.test(pathname);
+			if (!extractInline && (!wantsBrotli || status !== 200 || !ASSET_PATH.test(pathname))) {
 				res.writeHead(status, headers);
 				upstreamRes.pipe(res);
 				upstreamRes.on("error", () => {
@@ -163,19 +181,27 @@ function forward(req, res, target) {
 					const body = Buffer.concat(chunks);
 					try {
 						const encoding = String(headerValue(headers, "content-encoding") ?? "").toLowerCase();
-						const raw = encoding === "gzip" ? await gunzipAsync(body) : body;
+						let raw = encoding === "gzip" ? await gunzipAsync(body) : body;
+						if (extractInline) raw = Buffer.from(extractInlineAssets(raw.toString("utf8")).body, "utf8");
 						if (raw.length > BROTLI_MAX_RAW) throw new Error("asset too large to recompress");
-						const compressed = await brotliAsync(raw, { params: { [zlibConstants.BROTLI_PARAM_QUALITY]: 11 } });
+						const compressed = wantsBrotli ? await brotliAsync(raw, { params: { [zlibConstants.BROTLI_PARAM_QUALITY]: 11 } }) : raw;
 						const type = String(headerValue(headers, "content-type") ?? "application/octet-stream");
-						if (BROTLI_CACHE.size >= BROTLI_CACHE_MAX) {
-							const oldest = BROTLI_CACHE.keys().next().value;
-							BROTLI_CACHE.delete(oldest);
+						if (wantsBrotli) {
+							if (BROTLI_CACHE.size >= BROTLI_CACHE_MAX) {
+								const oldest = BROTLI_CACHE.keys().next().value;
+								BROTLI_CACHE.delete(oldest);
+							}
+							BROTLI_CACHE.set(pathname, { body: compressed, type });
 						}
-						BROTLI_CACHE.set(pathname, { body: compressed, type });
 						if (!res.destroyed) {
-							setHeader(headers, "content-encoding", "br");
+							if (wantsBrotli) {
+								setHeader(headers, "content-encoding", "br");
+								setHeader(headers, "vary", "accept-encoding");
+							} else {
+								setHeader(headers, "content-encoding", "identity");
+							}
+							if (extractInline) setHeader(headers, "cache-control", "public, max-age=31536000, immutable");
 							setHeader(headers, "content-length", String(compressed.length));
-							setHeader(headers, "vary", "accept-encoding");
 							res.writeHead(status, headers);
 							res.end(compressed);
 						}

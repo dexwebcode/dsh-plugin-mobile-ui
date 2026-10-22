@@ -11,6 +11,11 @@ export const DEFAULTS = {
   urlFile: '',
   updateRelayHostnames: true,
   keepTunnelOnExit: true,
+  // Для провайдера `cloudflared-named`: имя туннеля, его config.yml и
+  // постоянный публичный адрес (закреплён CNAME-записью в зоне Cloudflare).
+  namedTunnel: '',
+  namedConfig: '',
+  namedUrl: '',
   startupTimeoutMs: 60000,
   pollIntervalMs: 700,
   checkIntervalMs: 30000,

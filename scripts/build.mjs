@@ -29,9 +29,31 @@ import { fileURLToPath } from 'node:url'
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..')
 const SRC = join(ROOT, 'src')
 const LIB = join(ROOT, 'lib')
+const MANIFEST = JSON.parse(readFileSync(join(ROOT, 'package.json'), 'utf8'))
 
-/** Обёртка загрузчика модулей harness: ровно то, что ждёт браузерная половина. */
-const LOADER_ID = 'dsh-plugin-mobile-ui'
+/**
+ * Флаг сборки: `--id <id>` / `--id=<id>`.
+ * @param name - имя флага.
+ * @returns значение или undefined.
+ */
+function flag(name) {
+  for (let index = 2; index < process.argv.length; index++) {
+    const arg = process.argv[index]
+    if (arg === `--${name}`) return process.argv[index + 1]
+    if (arg.startsWith(`--${name}=`)) return arg.slice(name.length + 3)
+  }
+  return undefined
+}
+
+/**
+ * Обёртка загрузчика модулей harness: ровно то, что ждёт браузерная половина.
+ *
+ * Идентификатор модуля — имя пакета, под которым плагин установлен в профиле:
+ * по нему загрузчик ищет фабрику. Имя можно переопределить флагом `--id`, если
+ * сборка ставится под другим именем (например, туннель ставит `dsh-mobile-ui`,
+ * а репозиторий называется `dsh-plugin-mobile-ui`).
+ */
+const LOADER_ID = flag('id') ?? MANIFEST.name
 
 /**
  * Собрать пути всех `.js` в каталоге, включая подпапки.

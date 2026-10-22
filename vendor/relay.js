@@ -21,58 +21,6 @@ import { createServer as createServer$1 } from "node:https";
 import { chmod, mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import { brotliCompress, constants as zlibConstants, gunzip } from "node:zlib";
 
-// 00-usage.js — счётчик исходящего трафика relay.
-//
-// ПРАВКА ВЕНДОРА (локально). Зачем: у бесплатного ngrok 1 ГБ исходящего трафика
-// в месяц, и упереться в него можно молча — ngrok просто перестаёт отдавать
-// страницу (ERR_NGROK_725), а агент при этом жив. Relay видит ровно тот трафик,
-// который потом уходит в туннель, поэтому считаем здесь: каждый байт,
-// записанный клиенту, плюс кадры websocket. Счётчик живёт в памяти процесса и
-// начинается заново вместе с relay; накопительную статистику по месяцам ведёт
-// host-половина плагина (`src/host/usage.js`).
-var USAGE_BYTES = 0;
-var USAGE_SINCE = Date.now();
-/**
-* Учесть отправленные клиенту байты.
-* @param size - byte length of the chunk.
-*/
-function usageAdd(size) {
-	if (Number.isFinite(size) && size > 0) USAGE_BYTES += size;
-}
-/**
-* Считать байты, которые обработчик пишет в ответ.
-*
-* Оборачиваем `write`/`end`, а не `writeHead`: заголовки в лимит ngrok не идут,
-* а тело — идёт целиком.
-* @param res - the response to instrument.
-* @returns the same response.
-*/
-function usageCountResponse(res) {
-	const write = res.write.bind(res);
-	const end = res.end.bind(res);
-	res.write = (chunk, ...rest) => {
-		if (chunk !== void 0 && chunk !== null && typeof chunk !== "function") usageAdd(Buffer.byteLength(chunk));
-		return write(chunk, ...rest);
-	};
-	res.end = (chunk, ...rest) => {
-		if (chunk !== void 0 && chunk !== null && typeof chunk !== "function") usageAdd(Buffer.byteLength(chunk));
-		return end(chunk, ...rest);
-	};
-	return res;
-}
-/**
-* Считать байты, которые уходят в websocket.
-* @param socket - the client-side socket.
-* @returns the same socket.
-*/
-function usageCountSocket(socket) {
-	const write = socket.write.bind(socket);
-	socket.write = (chunk, ...rest) => {
-		if (chunk !== void 0 && chunk !== null && typeof chunk !== "function") usageAdd(Buffer.byteLength(chunk));
-		return write(chunk, ...rest);
-	};
-	return socket;
-}
 //#region lib/types/fence.js
 // 01-fence.js — кому relay вообще отвечает: проверка authority и Host.
 /**
@@ -2472,17 +2420,6 @@ async function handleRelayRoute(req, res, url, context) {
 		});
 		return;
 	}
-	if (path === "/relay/usage.json" && method === "GET") {
-		if (!isOperator(identity)) {
-			refuse(req, res, "Usage is reported on the machine running the harness.");
-			return;
-		}
-		sendJson(res, 200, {
-			bytes: USAGE_BYTES,
-			since: USAGE_SINCE
-		});
-		return;
-	}
 	if (path === "/relay/pair" && method === "GET") {
 		if (isOperator(identity)) {
 			const code = auth.pairing.peek(now) ?? auth.pairing.issue(config.pairingCodeLength, config.pairingWindowMs, now);
@@ -2621,7 +2558,7 @@ async function handleRelayRoute(req, res, url, context) {
 }
 
 //#endregion
-﻿//#region lib/types/secure-context.js
+//#region lib/types/secure-context.js
 // 12-secure-context.js — подмена secure context для старых браузеров.
 /**
 * A UUID for a page the browser refuses to call secure.
@@ -2713,8 +2650,8 @@ function injectSecureContextShim(html) {
 //
 // ПРАВКА ВЕНДОРА (локально). Зачем: страница тянет ~350 КБ (brotli) ассетов и
 // ещё раз запрашивает оболочку при каждой перезагрузке; мобильные браузеры к
-// тому же вычищают HTTP-кэш за неделю — телефон качает всё заново, выжигая
-// лимит ngrok.
+// тому же вычищают HTTP-кэш за неделю — телефон качает всё заново, тратя
+// мобильный трафик.
 //
 // Что делает воркер:
 //   * при установке скачивает оболочку и все ассеты, на которые она ссылается,
@@ -3050,7 +2987,7 @@ function loopbackAuthority(target) {
 *
 * ПРАВКА ВЕНДОРА (локально): harness не отдаёт `cache-control` для хэшированных
 * ассетов сборки. Браузер поэтому качал все ~470 КБ при каждом входе — это и
-* выжигало лимит ngrok. Имя файла у Vite содержит хэш содержимого, так что такие
+* тратило мобильный трафик. Имя файла у Vite содержит хэш содержимого, так что такие
 * ответы можно кэшировать навсегда; HTML наоборот не кэшируем, иначе телефон
 * залипнет на старой сборке.
 * @param headers - the response headers, already stripped of hop-by-hop entries.
@@ -3146,6 +3083,18 @@ function forward(req, res, target) {
 	return new Promise((resolve$1) => {
 		const pathname = (req.url ?? "/").split("?")[0];
 		const wantsBrotli = acceptsBrotli(headerValue(req.headers, "accept-encoding"));
+		/** Картинка, вынутая из бандла плагина: отдаём из памяти, без harness. */
+		const inline = INLINE_ASSETS.get(pathname);
+		if (inline !== undefined) {
+			res.writeHead(200, {
+				"content-type": "image/png",
+				"content-length": String(inline.length),
+				"cache-control": "public, max-age=31536000, immutable"
+			});
+			res.end(inline);
+			resolve$1();
+			return;
+		}
 		const cached = BROTLI_CACHE.get(pathname);
 		if (wantsBrotli && cached !== void 0) {
 			sendBrotli(res, cached);
@@ -3177,7 +3126,13 @@ function forward(req, res, target) {
 			const headers = downstreamHeaders(upstreamRes.headers);
 			applyCacheHeaders(headers, pathname);
 			const status = upstreamRes.statusCode ?? 502;
-			if (!wantsBrotli || status !== 200 || !ASSET_PATH.test(pathname)) {
+			/**
+			 * Бандл «Аккаунта» везёт иллюстрации онбординга прямо в base64:
+			 * 5 МБ из 5,15 МБ файла. Вырезаем их до отправки на телефон — на
+			 * экране приветствия они всё равно нужны далеко не сразу.
+			 */
+			const extractInline = status === 200 && PLUGIN_BUNDLE_WITH_INLINE.test(pathname);
+			if (!extractInline && (!wantsBrotli || status !== 200 || !ASSET_PATH.test(pathname))) {
 				res.writeHead(status, headers);
 				upstreamRes.pipe(res);
 				upstreamRes.on("error", () => {
@@ -3204,19 +3159,27 @@ function forward(req, res, target) {
 					const body = Buffer.concat(chunks);
 					try {
 						const encoding = String(headerValue(headers, "content-encoding") ?? "").toLowerCase();
-						const raw = encoding === "gzip" ? await gunzipAsync(body) : body;
+						let raw = encoding === "gzip" ? await gunzipAsync(body) : body;
+						if (extractInline) raw = Buffer.from(extractInlineAssets(raw.toString("utf8")).body, "utf8");
 						if (raw.length > BROTLI_MAX_RAW) throw new Error("asset too large to recompress");
-						const compressed = await brotliAsync(raw, { params: { [zlibConstants.BROTLI_PARAM_QUALITY]: 11 } });
+						const compressed = wantsBrotli ? await brotliAsync(raw, { params: { [zlibConstants.BROTLI_PARAM_QUALITY]: 11 } }) : raw;
 						const type = String(headerValue(headers, "content-type") ?? "application/octet-stream");
-						if (BROTLI_CACHE.size >= BROTLI_CACHE_MAX) {
-							const oldest = BROTLI_CACHE.keys().next().value;
-							BROTLI_CACHE.delete(oldest);
+						if (wantsBrotli) {
+							if (BROTLI_CACHE.size >= BROTLI_CACHE_MAX) {
+								const oldest = BROTLI_CACHE.keys().next().value;
+								BROTLI_CACHE.delete(oldest);
+							}
+							BROTLI_CACHE.set(pathname, { body: compressed, type });
 						}
-						BROTLI_CACHE.set(pathname, { body: compressed, type });
 						if (!res.destroyed) {
-							setHeader(headers, "content-encoding", "br");
+							if (wantsBrotli) {
+								setHeader(headers, "content-encoding", "br");
+								setHeader(headers, "vary", "accept-encoding");
+							} else {
+								setHeader(headers, "content-encoding", "identity");
+							}
+							if (extractInline) setHeader(headers, "cache-control", "public, max-age=31536000, immutable");
 							setHeader(headers, "content-length", String(compressed.length));
-							setHeader(headers, "vary", "accept-encoding");
 							res.writeHead(status, headers);
 							res.end(compressed);
 						}
@@ -3239,6 +3202,65 @@ function forward(req, res, target) {
 }
 
 //#endregion
+// 03-inline-assets.js — вынос тяжёлых inline-картинок из бандлов плагинов.
+//
+// ПРОБЛЕМА. Клиентский бандл «Аккаунта» (@deepseek-ai/dsh-client-ui-settings-account)
+// весит 5,03 МБ, и 5,07 МБ из них — восемь PNG, вшитых в JS как data:image/png;base64.
+// Это иллюстрации экрана приветствия и «пополнения». Они уезжают на телефон при
+// каждом холодном входе, хотя видны только на одном экране и только один раз.
+// base64 вдобавок не сжимается: gzip такого бандла — 3,75 МБ против 42 КБ после
+// выноса картинок.
+//
+// РЕШЕНИЕ. Relay читает бандл с loopback, заменяет каждую большую data-URI на
+// собственный URL картинки и отдаёт PNG отдельным ответом. Браузер запрашивает
+// их только когда соответствующий <img> действительно отрисован, а сам бандл
+// приходит уже без мегабайтов.
+//
+// Имя картинки — sha1 от её содержимого, поэтому URL стабилен между запросами и
+// перезапусками relay, а кэш можно объявить immutable.
+/**
+ * Префикс маршрута вынесенных картинок. Не пересекается с маршрутами harness:
+ * всё, чего relay не знает, он проксирует на loopback.
+ */
+const INLINE_ASSETS_PATH = "/__dsh-mobile/inline/";
+/** data-URI PNG, достаточно крупная, чтобы её стоило выносить (base64 > 100 КБ). */
+const INLINE_PNG_DATA = /data:image\/png;base64,[A-Za-z0-9+/=]{100000,}/g;
+/** Бандл, внутри которого лежат иллюстрации онбординга. */
+const PLUGIN_BUNDLE_WITH_INLINE = /^\/plugins\/[^?]*dsh-client-ui-settings-account/;
+/** Содержимое вынесенных картинок: путь -> PNG. */
+const INLINE_ASSETS = /* @__PURE__ */ new Map();
+/** Предел числа картинок: их всего восемь на сборку. */
+const INLINE_ASSETS_MAX = 16;
+/**
+ * Положить картинку в память и вернуть её URL.
+ * @param dataUri - исходная data:image/png;base64,... строка.
+ * @returns путь, по которому relay её отдаст.
+ */
+function inlineAssetFor(dataUri) {
+	const digest = createHash("sha1").update(dataUri).digest("hex").slice(0, 20);
+	const path = `${INLINE_ASSETS_PATH}${digest}.png`;
+	if (!INLINE_ASSETS.has(path)) {
+		if (INLINE_ASSETS.size >= INLINE_ASSETS_MAX) {
+			const oldest = INLINE_ASSETS.keys().next().value;
+			INLINE_ASSETS.delete(oldest);
+		}
+		INLINE_ASSETS.set(path, Buffer.from(dataUri.slice(dataUri.indexOf(",") + 1), "base64"));
+	}
+	return path;
+}
+/**
+ * Заменить крупные inline-PNG на URL, которые отдаст relay.
+ * @param source - текст бандла.
+ * @returns текст без вшитых картинок и число заменённых.
+ */
+function extractInlineAssets(source) {
+	let count = 0;
+	const body = source.replace(INLINE_PNG_DATA, (dataUri) => {
+		count += 1;
+		return inlineAssetFor(dataUri);
+	});
+	return { body, count };
+}
 //#region lib/types/proxy/ws.js
 // 03-ws.js — проксирование websocket-соединений.
 /** Tracks live upgraded sockets so teardown can force them closed. */
@@ -3344,8 +3366,6 @@ function forwardUpgrade(req, socket, head, target, ledger) {
 		});
 		if (upstreamHead.length > 0) socket.write(upstreamHead);
 		if (head.length > 0) upstreamSocket.write(head);
-		// Считаем кадры, уходящие клиенту: чат и есть основной трафик.
-		usageCountSocket(socket);
 		upstreamSocket.pipe(socket);
 		socket.pipe(upstreamSocket);
 	});
@@ -3459,8 +3479,6 @@ function plainOriginOf(req, plainPort) {
 */
 async function serve(req, res, runtime, policy, authorities) {
 	const now = Date.now();
-	// Считаем исходящий трафик: всё, что уйдёт клиенту, попадёт в лимит ngrok.
-	usageCountResponse(res);
 	const address = normalizeAddress(req.socket.remoteAddress);
 	const local = isLoopbackHostname(address === "" ? "x" : address);
 	if ((!local || isForwarded(req.headers)) && runtime.auth.exceedsRate(address, now)) {
@@ -4140,11 +4158,10 @@ async function start(ctx, config, log) {
 	// Регистрация service worker: кэш ассетов переживает очистку HTTP-кэша
 	// браузером, поэтому повторный вход на телефоне не тянет 470 КБ заново.
 	const untapServiceWorker = ctx.webServer.tapIndex(injectServiceWorker);
-	const reachable = ["127.0.0.1", ...localAddresses()].map((address) => `${scheme}://${address}:${String(primary.port)}`).join(" ");
-	log.info(`listening on ${reachable} (harness on 127.0.0.1:${String(ctx.webServer.port)})`);
+	// Адрес в консоль не печатаем: ссылки relay не нужны.
 	if (material === void 0) log.warn("serving plaintext: anything on the network path can read this traffic and the credentials on it");
 	if (compat !== void 0) log.warn(`plain compatibility listener on port ${String(compat.port)}: DSH Mobile 0.5.0 only, no configuration access`);
-	if (!auth.hasPassword) log.info(`no password set yet — open ${scheme}://127.0.0.1:${String(primary.port)}/relay/password on this machine to set one`);
+	if (!auth.hasPassword) log.info('Пароль ещё не задан — задайте его в настройках Mobile UI.');
 	const unadvertise = config.mdns ? await advertise({
 		port: primary.port,
 		plainPort: compat?.port,

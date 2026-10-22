@@ -8,10 +8,9 @@ import { delay, resolveBinary } from './runtime.js'
 /**
  * Перезапуск активного туннеля.
  *
- * Сторож перезапускает только умершего агента: живой агент с исчерпанным
- * аккаунтом ngrok для него здоров (порт отвечает, ссылка выдана). Смена аккаунта
- * по лимиту трафика (`lib/host/ngrok-accounts.js`) поэтому просит перезапуск
- * здесь — только эффект владеет `child`.
+ * Сторож перезапускает только умершего агента: живой агент с исчерпанным лимитом
+ * для него здоров (порт отвечает, ссылка выдана). Здесь живёт единственная точка
+ * перезапуска — только эффект владеет `child`.
  */
 let restartActive = null
 
@@ -52,14 +51,8 @@ export function supervise(ctx, provider, options, log) {
     /** Найти живой туннель или поднять новый. */
     const acquire = async () => {
       const running = await existingUrl(provider, options)
-      if (typeof running === 'string') {
-        log.info(`reusing the agent already listening on :${String(options.controlPort)}`)
-        return running
-      }
-      if (running === null) {
-        log.info(`agent on :${String(options.controlPort)} is up; waiting for its public URL`)
-        return await waitForUrl(provider, options, () => disposed)
-      }
+      if (typeof running === 'string') return running
+      if (running === null) return await waitForUrl(provider, options, () => disposed)
 
       const binary = resolveBinary(options, provider)
       const args = provider.args(options)
@@ -76,29 +69,25 @@ export function supervise(ctx, provider, options, log) {
       child.on('exit', (code, signal) => {
         if (!disposed) log.warn(`${provider.binaryName} exited (${code === null ? String(signal) : String(code)})`)
       })
-      log.info(`started ${binary} ${args.join(' ')}`)
       return await waitForUrl(provider, options, () => disposed)
     }
 
     /** Привести публичный адрес в порядок: файл, relay, проверка. */
     const publish = async (url) => {
       writeUrlFile(options.urlFile, url)
-      log.info(`public URL: ${url}  (also written to ${options.urlFile})`)
+      log.info('Telegram-бот активен')
 
       if (options.updateRelayHostnames) {
         const host = new URL(url).host
         const result = ensurePublicHostname(options.profilePatch, host)
-        if (result === 'updated') log.info(`relay publicHostnames updated to ${host}; the relay reloads it itself`)
-        else if (result === 'unchanged') log.info(`relay already trusts ${host}`)
-        else if (result === 'missing-row') log.warn(`no relay row in ${options.profilePatch}; add publicHostnames: ['${host}'] by hand`)
-        else log.warn(`patch file not found: ${options.profilePatch}`)
+        if (result === 'missing-row') log.warn(`no relay row in ${options.profilePatch}; add publicHostnames: ['${host}'] by hand`)
+        else if (result !== 'updated' && result !== 'unchanged') log.warn(`patch file not found: ${options.profilePatch}`)
       }
 
       await delay(2500)
       const status = await probe(url, options.healthTimeoutMs)
-      if (status === 200) log.info('relay answers on the public URL (200); sign in once per browser and bookmark it')
-      else if (status !== undefined) log.warn(`relay answered ${String(status)} on the public URL; the name may not be in publicHostnames yet`)
-      else log.warn('relay did not answer on the public URL yet; the tunnel may still be propagating')
+      if (status === 200 || status === undefined) return
+      log.warn(`relay answered ${String(status)} on the public URL; the name may not be in publicHostnames yet`)
     }
 
     /** Полный цикл: поднять (или переиспользовать) и опубликовать. */
@@ -106,13 +95,13 @@ export function supervise(ctx, provider, options, log) {
       const url = await acquire()
       if (disposed) return
       if (url === undefined) {
-        log.warn(`no public URL within ${String(options.startupTimeoutMs)} ms — run the provider once by hand to see its own error (ngrok additionally blocks Russian addresses with ERR_NGROK_9040)`)
+        log.warn(`no public URL within ${String(options.startupTimeoutMs)} ms — run the provider once by hand to see its own error`)
         return
       }
       await publish(url)
     }
 
-    // Регистрируем перезапуск: им пользуется смена ngrok-аккаунта по лимиту.
+    // Регистрируем перезапуск: им пользуется смена лимита аккаунта.
     restartActive = async () => {
       if (disposed) return false
       killOwn()
